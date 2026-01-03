@@ -1,216 +1,303 @@
 import justpy as jp
 import os
-import re
-import json
+import sys
+import asyncio
+
+# Add code folder to path to avoid conflict with built-in 'code' module
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
+
+from cleaner import clean_log_file
+from parser import (
+    template_miner, preprocess_log, remove_trailing_timestamp,
+    normalize_login_uid, normalize_ftpd_rhost, extract_named_parameters
+)
 import pandas as pd
-from drain3 import TemplateMiner
-from drain3.template_miner_config import TemplateMinerConfig
-from drain3.masking import MaskingInstruction
 
 # ==========================================
-# PART 1: LOGIC FROM DATA_CLEANER.PY
+# BLACKLIST (for display)
 # ==========================================
-
 BLACKLIST = [
-    # 1. Hardware & Boot
-    "kernel", "rc", "irqbalance", "sysctl", "network", "random", "udev", 
+    "kernel", "rc", "irqbalance", "sysctl", "network", "random", "udev",
     "apmd", "smartd", "init",
-    # 2. Peripherals
     "bluetooth", "sdpd", "hcid", "cups", "gpm",
-    # 3. System Housekeeping
-    "logrotate", "syslog", "klogd", "crond", "anacron", "atd", "readahead", 
+    "logrotate", "syslog", "klogd", "crond", "anacron", "atd", "readahead",
     "messagebus", "ntpd", "dd",
-    # 4. Network Plumbing
-    "rpc.statd", "rpcidmapd", "portmap", "nfslock", "automount", "ifup", 
+    "rpc.statd", "rpcidmapd", "portmap", "nfslock", "automount", "ifup",
     "netfs", "autofs",
-    # 5. PROXIES & SERVERS
-    "privoxy", "squid", "sendmail", "spamassassin", "httpd", "xfs", 
+    "privoxy", "squid", "sendmail", "spamassassin", "httpd", "xfs",
     "IIim", "htt", "htt_server", "canna", "named", "rsyncd", "mysqld", "FreeWnn"
 ]
 
-def run_cleaner_logic(input_filename):
-    """Refactored logic from data_cleaner.py"""
-    if not os.path.exists(input_filename):
-        return None, f"Error: '{input_filename}' not found.", None
+# ==========================================
+# GLOBAL STATE
+# ==========================================
+class AppState:
+    uploaded_file_path = None
+    cleaned_file_path = None
 
-    base_name, extension = os.path.splitext(input_filename)
-    output_filename = f"{base_name}_clean{extension}"
-    trash_filename = f"{base_name}_trash{extension}"
-
-    removed_count = 0
-    kept_count = 0
-
-    try:
-        with open(input_filename, 'r') as infile, \
-             open(output_filename, 'w') as outfile, \
-             open(trash_filename, 'w') as trashfile:
-            
-            for line in infile:
-                stripped_line = line.strip()
-                if not stripped_line: continue
-
-                tokens = stripped_line.split()
-
-                # Safety check for short lines
-                if len(tokens) < 5:
-                    outfile.write(line)
-                    kept_count += 1
-                    continue
-
-                process_token = tokens[4] 
-
-                matched_keyword = None
-                for bad_process in BLACKLIST:
-                    if process_token.startswith(bad_process):
-                        matched_keyword = bad_process
-                        break
-                
-                if matched_keyword:
-                    trashfile.write(f"[MATCHED: {matched_keyword}] {line}")
-                    removed_count += 1
-                else:
-                    outfile.write(line)
-                    kept_count += 1
-        
-        msg = (f"Cleaning Complete.\n"
-               f"Kept: {kept_count} lines\n"
-               f"Removed: {removed_count} lines\n"
-               f"Clean file saved to: {output_filename}")
-        return output_filename, msg, trash_filename
-
-    except Exception as e:
-        return None, f"Error during cleaning: {str(e)}", None
-
+state = AppState()
 
 # ==========================================
-# PART 2: LOGIC FROM DRAIN2EXCEL.PY
+# STYLES
 # ==========================================
+card_style = """
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 24px;
+    margin-bottom: 20px;
+"""
 
-def get_drain_config():
-    """Recreates the specific configuration from drain2excel.py"""
-    config = TemplateMinerConfig()
-    config.profiling_enabled = False
-    config.drain_depth = 7 
-    config.drain_sim_th = 0.75 
-    config.mask_prefix = "" 
-    config.mask_suffix = ""
+button_primary = """
+    background-color: #2563eb;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    width: 100%;
+"""
 
-    config.masking_instructions = [
-        MaskingInstruction(r"\(Address already in use \(errno = \d+\)\)", "(Address already in use (errno = <NUM>))"),
-        MaskingInstruction(r"FAILED LOGIN\s+\d+", "FAILED LOGIN <NUM>"),
-        MaskingInstruction(r"fd\s+\d+", "fd <NUM>"),
-        MaskingInstruction(r"\b\d+\s+seconds", "<NUM> seconds"),
-        MaskingInstruction(r"\b\d+\s*([<>=!]+)\s*\d+", r"<NUM> \1 <NUM>"),
-        MaskingInstruction(r"bad username\s*\[.*?\]", "bad username [<USERNAME>]"),
-        MaskingInstruction(r"password changed for\s+\S+", "password changed for <USERNAME>"),
-        MaskingInstruction(r"FOR\s+.*?,", "FOR <USERNAME>,"),
-        MaskingInstruction(r"\b(?:\w+)?\(uid=\d+\)", "(uid=<UID>)"),
-        MaskingInstruction(r"([cC]onnect(?:ion)? from)\s+\S+", r"\1 <RHOST>"),
-        MaskingInstruction(r"\b(startup|shutdown|opened|closed)\b(?!:)", "<STATE>"),
-        MaskingInstruction(r"ANONYMOUS FTP LOGIN FROM .+", "ANONYMOUS FTP LOGIN FROM <RHOST>"),
-        MaskingInstruction(r"\beuid=\d+", "euid=<EUID>"),
-        MaskingInstruction(r"\btty=\S+", "tty=<TTY>"),
-        MaskingInstruction(r"\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}", "<TIMESTAMP>"),
-        MaskingInstruction(r"\[\d+\]", "[<PID>]"),
-        MaskingInstruction(r"\b(\w+)\(uid=\d+\)", r"\1(uid=<UID>)"),
-        MaskingInstruction(r"\buid=\d+", "uid=<UID>"),
-        MaskingInstruction(r"user=\S+", "user=<USERNAME>"),
-        MaskingInstruction(r"user\s+(?!does\b)\S+", "user <USERNAME>"),
-        MaskingInstruction(r"(?<=\s)\((?!uid=|Address|errno|ftpd|.*?chars)[^)]*\)", "(<RHOST>)"),
-        MaskingInstruction(r"rhost=\S+", "rhost=<RHOST>"),
-        MaskingInstruction(r"((?<!\d)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?!\d)(?::\d+)?)", "<RHOST>"),
-    ]
-    return config
+button_secondary = """
+    background-color: #f3f4f6;
+    color: #374151;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    cursor: pointer;
+    font-weight: 500;
+"""
 
-def remove_trailing_timestamp(text):
-    trailing_regex = r"\s+at\s+\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}$"
-    return re.sub(trailing_regex, "", text)
+input_style = """
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+"""
 
-def normalize_login_uid(line):
-    return re.sub(r"\b\w+\(uid=", "(uid=", line)
-
-def normalize_ftpd_rhost(line):
-    pattern = re.compile(r"(connection from)\s+(\d{1,3}(?:\.\d{1,3}){3})\s*\(([^)]*)\)")
-    def replacer(match):
-        prefix = match.group(1)
-        outer_ip = match.group(2)
-        inner = match.group(3).strip()
-        if inner: return f"{prefix} {outer_ip} ({inner})"
-        else: return f"{prefix} {outer_ip}"
-    return pattern.sub(replacer, line)
-
-def preprocess_log(log_line):
-    log_line = remove_trailing_timestamp(log_line)
-    log_line = normalize_ftpd_rhost(log_line)
-    header_regex = r'^([A-Z][a-z]{2}\s+\d+\s\d{2}:\d{2}:\d{2})\s+(\S+)'
-    log_line = re.sub(header_regex, '<TIMESTAMP> <HOSTNAME>', log_line)
-    return log_line.strip()
-
-def extract_named_parameters(clean_raw_line, template):
-    params = {}
-    regex_pattern = re.escape(template)
-    regex_pattern = regex_pattern.replace(r"\ ", r"\s+?")
-    regex_pattern = regex_pattern.replace(" ", r"\s+?")
-    regex_pattern = regex_pattern.replace(r"\*", r"(.*?)")
-
-    special_tags = {
-        "<TIMESTAMP>": r"([A-Z][a-z]{2}\s+\d+\s\d{2}:\d{2}:\d{2})",
-        "<HOSTNAME>": r"(\S+)"
-    }
-    for tag, pattern in special_tags.items():
-        if tag in template:
-            regex_pattern = regex_pattern.replace(re.escape(tag), pattern)
-
-    remaining_tags = re.findall(r"<[A-Z]+>", template)
-    for tag in set(remaining_tags):
-        if tag not in special_tags:
-            regex_pattern = regex_pattern.replace(re.escape(tag), r"(.*?)")
-
-    regex_pattern = f"^{regex_pattern}$"
-
-    try:
-        match = re.match(regex_pattern, clean_raw_line)
-        if not match: return json.dumps({})
-        extracted_values = list(match.groups())
-        ordered_tags = re.findall(r"<[A-Z]+>", template)
-        
-        if len(extracted_values) == len(ordered_tags):
-             for tag, value in zip(ordered_tags, extracted_values):
-                key = tag.strip("<>")
-                if value is None: value = ""
-                if key in params:
-                    if value not in params[key]:
-                        params[key] = f"{params[key]}, {value}"
-                else:
-                    params[key] = value
-    except Exception:
-        pass
-    return json.dumps(params)
-
-def run_parser_logic(target_file):
-    """Refactored logic from drain2excel.py"""
-    if not os.path.exists(target_file):
-        return None, f"Error: '{target_file}' not found."
-
-    base_name, _ = os.path.splitext(target_file)
-    output_excel = f"{base_name}_analysis.xlsx"
+# ==========================================
+# COMPONENT BUILDERS
+# ==========================================
+def create_header(container):
+    """Create the header with logo and title"""
+    header = jp.Div(a=container, classes="text-center mb-8")
     
-    template_miner = TemplateMiner(config=get_drain_config())
-    rows = []
+    # Linux penguin emoji as logo
+    logo = jp.Div(a=header, classes="text-5xl mb-2")
+    logo.inner_html = "🐧"
+    
+    title = jp.H1(a=header, text="Linux Log Analysis Pipeline",
+                  classes="text-2xl font-bold text-blue-600")
+    return header
 
+
+def create_step_card(container, step_num, title, description):
+    """Create a step card container"""
+    card = jp.Div(a=container, style=card_style)
+    
+    # Step header
+    header = jp.Div(a=card, classes="flex items-center gap-2 mb-2")
+    step_badge = jp.Span(a=header, text="📄", classes="text-lg")
+    step_title = jp.Span(a=header, text=f"Step {step_num}: {title}",
+                         classes="font-semibold text-gray-800")
+    
+    # Description
+    jp.P(a=card, text=description, classes="text-gray-500 text-sm mb-4")
+    
+    return card
+
+
+def create_file_upload_area(card, on_file_change):
+    """Create file upload/drag area"""
+    upload_area = jp.Div(a=card, classes="mb-4")
+    
+    # Drag and drop text
+    jp.P(a=upload_area, text="Drag and drop file here",
+         classes="text-center text-gray-400 mb-3")
+    
+    # File input row
+    file_row = jp.Div(a=upload_area, classes="flex items-center justify-center gap-3 mb-4")
+    
+    # File input button
+    file_input = jp.Input(a=file_row, type="file", accept=".log,.txt",
+                          classes="hidden", id="file-input")
+    
+    select_btn = jp.Button(a=file_row, text="📁 Select Log File",
+                           style=button_secondary,
+                           click=lambda self, msg: msg.page.run_javascript(
+                               "document.getElementById('file-input').click()"))
+    
+    file_label = jp.Span(a=file_row, text="No file selected",
+                         classes="text-gray-500 text-sm", name="file_label")
+    
+    file_input.on("change", on_file_change)
+    file_input.file_label = file_label
+    
+    return upload_area, file_input, file_label
+
+
+def create_manual_path_input(card):
+    """Create manual path input section"""
+    jp.Div(a=card, classes="text-center text-gray-400 text-sm my-4").inner_html = "OR"
+    
+    path_input = jp.Input(a=card, type="text",
+                          placeholder="Enter path manually (e.g., Logs/Linux_2k.log)",
+                          style=input_style, classes="mb-4")
+    return path_input
+
+
+def create_blacklist_accordion(card):
+    """Create expandable blacklist section"""
+    accordion = jp.Div(a=card, classes="mt-4")
+    
+    # Toggle header
+    toggle_row = jp.Div(a=accordion, classes="flex items-center gap-2 cursor-pointer py-2")
+    arrow = jp.Span(a=toggle_row, text="▶", classes="text-xs text-gray-500", name="arrow")
+    checkbox = jp.Input(a=toggle_row, type="checkbox", classes="mr-1")
+    jp.Span(a=toggle_row, text="View blacklisted process keywords",
+            classes="text-sm text-gray-600")
+    
+    # Content (hidden by default)
+    content = jp.Div(a=accordion, classes="hidden mt-3 p-3 bg-gray-50 rounded-lg",
+                     name="blacklist_content")
+    
+    # Display blacklist in columns
+    grid = jp.Div(a=content, classes="grid grid-cols-4 gap-2 text-xs text-gray-600")
+    for keyword in BLACKLIST:
+        jp.Span(a=grid, text=keyword, classes="bg-gray-200 px-2 py-1 rounded")
+    
+    def toggle_blacklist(self, msg):
+        if "hidden" in content.classes:
+            content.classes = content.classes.replace("hidden", "")
+            arrow.text = "▼"
+        else:
+            content.classes += " hidden"
+            arrow.text = "▶"
+    
+    toggle_row.on("click", toggle_blacklist)
+    
+    return accordion
+
+
+def create_status_area(container):
+    """Create status message area"""
+    status = jp.Div(a=container, classes="mt-4 p-4 rounded-lg hidden", name="status")
+    return status
+
+
+# ==========================================
+# EVENT HANDLERS
+# ==========================================
+async def on_file_selected(self, msg):
+    """Handle file selection"""
+    if msg.file_info:
+        file_info = msg.file_info[0]
+        filename = file_info['name']
+        self.file_label.text = filename
+        
+        # Save file content
+        file_content = file_info['file_content']
+        
+        # Save to Logs folder
+        logs_dir = "Logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        save_path = os.path.join(logs_dir, filename)
+        
+        # Decode and save
+        import base64
+        content = base64.b64decode(file_content.split(',')[1]).decode('utf-8', errors='ignore')
+        with open(save_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        state.uploaded_file_path = save_path
+        await msg.page.update()
+
+
+async def clean_log_clicked(self, msg):
+    """Handle Clean Log File button click"""
+    page = msg.page
+    status = page.status_area
+    path_input = page.path_input
+    
+    # Determine file path
+    file_path = path_input.value.strip() if path_input.value.strip() else state.uploaded_file_path
+    
+    if not file_path:
+        status.classes = "mt-4 p-4 rounded-lg bg-red-100 text-red-700"
+        status.text = "⚠️ Please select a file or enter a path first."
+        await page.update()
+        return
+    
+    # Show processing status
+    status.classes = "mt-4 p-4 rounded-lg bg-blue-100 text-blue-700"
+    status.text = "🔄 Cleaning log file..."
+    await page.update()
+    
+    # Run cleaner
+    result = clean_log_file(file_path)
+    
+    if result is None:
+        status.classes = "mt-4 p-4 rounded-lg bg-red-100 text-red-700"
+        status.text = f"❌ Error: Could not find '{file_path}'"
+    else:
+        output_file, trash_file, kept, removed = result
+        state.cleaned_file_path = output_file
+        status.classes = "mt-4 p-4 rounded-lg bg-green-100 text-green-700"
+        status.inner_html = f"""
+            ✅ <strong>Cleaning Complete!</strong><br>
+            • Kept: {kept} lines → <code>{output_file}</code><br>
+            • Removed: {removed} lines → <code>{trash_file}</code>
+        """
+        
+        # Enable Step 2 button
+        page.parse_btn.set_class("opacity-100")
+        page.parse_btn.disabled = False
+    
+    await page.update()
+
+
+async def parse_log_clicked(self, msg):
+    """Handle Parse Log File button click"""
+    page = msg.page
+    status = page.status_area_2
+    path_input = page.path_input_2
+    
+    # Determine file path
+    file_path = path_input.value.strip() if path_input.value.strip() else state.cleaned_file_path
+    
+    if not file_path:
+        status.classes = "mt-4 p-4 rounded-lg bg-red-100 text-red-700"
+        status.text = "⚠️ Please clean a log file first or enter a path."
+        await page.update()
+        return
+    
+    # Show processing status
+    status.classes = "mt-4 p-4 rounded-lg bg-blue-100 text-blue-700"
+    status.text = "🔄 Parsing log file with Drain3... This may take a moment."
+    await page.update()
+    
+    # Run parser
     try:
-        with open(target_file, 'r') as f:
+        base_name, _ = os.path.splitext(file_path)
+        output_excel = f"{base_name}_analysis.xlsx"
+        
+        rows = []
+        with open(file_path, 'r') as f:
             for line in f:
                 raw_line = line.strip()
-                if not raw_line: continue
+                if not raw_line:
+                    continue
                 
-                # Preprocess & Mine
                 content = preprocess_log(raw_line)
                 result = template_miner.add_log_message(content)
+                
                 template = result['template_mined']
                 cluster_id = result['cluster_id']
                 
-                # Extract Variables
                 clean_raw_line = remove_trailing_timestamp(raw_line)
                 clean_raw_line = normalize_login_uid(clean_raw_line)
                 clean_raw_line = normalize_ftpd_rhost(clean_raw_line)
@@ -223,7 +310,7 @@ def run_parser_logic(target_file):
                     "Template ID": cluster_id,
                     "Parameters": params_json
                 })
-
+        
         if rows:
             df_logs = pd.DataFrame(rows)
             df_logs = df_logs.sort_values(by="Template ID")
@@ -244,86 +331,99 @@ def run_parser_logic(target_file):
                 df_logs.to_excel(writer, sheet_name='Log Analysis', index=False)
                 df_summary.to_excel(writer, sheet_name='Template Summary', index=False)
             
-            msg = (f"Analysis Complete!\n"
-                   f"Total Lines: {len(df_logs)}\n"
-                   f"Unique Clusters: {len(df_summary)}\n"
-                   f"File saved: {output_excel}")
-            return output_excel, msg
+            status.classes = "mt-4 p-4 rounded-lg bg-green-100 text-green-700"
+            status.inner_html = f"""
+                ✅ <strong>Parsing Complete!</strong><br>
+                • Total Lines: {len(df_logs)}<br>
+                • Unique Templates: {len(df_summary)}<br>
+                • Output: <code>{output_excel}</code>
+            """
         else:
-            return None, "Warning: No logs found in the file."
+            status.classes = "mt-4 p-4 rounded-lg bg-yellow-100 text-yellow-700"
+            status.text = "⚠️ No logs found in the file."
             
+    except FileNotFoundError:
+        status.classes = "mt-4 p-4 rounded-lg bg-red-100 text-red-700"
+        status.text = f"❌ Error: '{file_path}' not found."
     except Exception as e:
-        return None, f"Error during parsing: {str(e)}"
+        status.classes = "mt-4 p-4 rounded-lg bg-red-100 text-red-700"
+        status.text = f"❌ Error: {str(e)}"
+    
+    await page.update()
+
 
 # ==========================================
-# PART 3: JUSTPY UI
+# MAIN PAGE
 # ==========================================
-
-async def analyze_app():
-    wp = jp.QuasarPage()
-    wp.title = "Log Analysis Tool"
-
-    # --- Header ---
-    div_main = jp.Div(classes="q-pa-md", a=wp)
-    jp.Div(text="Surgical Log Cleaner & Parser", classes="text-h4 q-mb-md", a=div_main)
-
-    # --- Step 1: Input ---
-    jp.Div(text="Step 1: Select File", classes="text-h6", a=div_main)
+def log_analysis_page():
+    wp = jp.WebPage()
+    wp.title = "Linux Log Analysis Pipeline"
     
-    input_wrapper = jp.Div(classes="row q-gutter-md items-center", a=div_main)
-    file_input = jp.Input(placeholder="Enter filename (e.g., Linux_2k.log)", 
-                          value="Linux_2k.log", 
-                          classes="q-pa-sm border rounded", 
-                          style="width: 300px;", a=input_wrapper)
+    # Main container
+    container = jp.Div(a=wp, classes="min-h-screen bg-gray-100 py-8")
+    inner = jp.Div(a=container, classes="max-w-2xl mx-auto px-4")
     
-    # --- Console Output Area ---
-    console_area = jp.Pre(classes="bg-grey-2 q-pa-md q-mt-md rounded-borders", 
-                          style="min-height: 150px; overflow-x: auto;", a=div_main)
-    console_area.text = "System Ready. Waiting for input..."
-
-    # --- Step 2 & 3: Actions ---
-    action_wrapper = jp.Div(classes="row q-gutter-md q-mt-md", a=div_main)
+    # Header
+    create_header(inner)
     
-    # Store state for the parsed filename
-    wp.cleaned_file_path = None
-
-    # --- Event Handlers ---
+    # ==========================================
+    # STEP 1: Clean Log File
+    # ==========================================
+    card1 = create_step_card(inner, 1, "Clean Log File",
+                             "Remove noise from hardware, boot, peripheral, and housekeeping processes.")
     
-    def on_clean_click(self, msg):
-        input_file = file_input.value.strip()
-        console_area.text = f"Running Cleaner on {input_file}...\n"
-        
-        cleaned_file, log_msg, trash_file = run_cleaner_logic(input_file)
-        
-        if cleaned_file:
-            console_area.text += log_msg
-            wp.cleaned_file_path = cleaned_file
-            # Enable parse button
-            btn_parse.disable = False
-            btn_parse.set_class("bg-primary")
-            btn_parse.set_class("text-white")
-        else:
-            console_area.text += log_msg
-            
-    def on_parse_click(self, msg):
-        if not wp.cleaned_file_path:
-            console_area.text += "\n\nError: No clean file found. Please run cleaning first."
-            return
-
-        console_area.text += f"\n\nRunning Drain3 Parser on {wp.cleaned_file_path}..."
-        excel_file, log_msg = run_parser_logic(wp.cleaned_file_path)
-        
-        console_area.text += "\n" + "-"*30 + "\n"
-        console_area.text += log_msg
-
-    # --- Buttons ---
-    btn_clean = jp.Button(text="Clean Logs", classes="q-btn bg-teal text-white", a=action_wrapper)
-    btn_clean.on('click', on_clean_click)
-
-    btn_parse = jp.Button(text="Analyze & Generate Excel", classes="q-btn bg-grey-4 text-grey-8", disable=True, a=action_wrapper)
-    btn_parse.on('click', on_parse_click)
-
+    # File upload area
+    upload_area, file_input, file_label = create_file_upload_area(card1, on_file_selected)
+    
+    # Manual path input
+    path_input = create_manual_path_input(card1)
+    wp.path_input = path_input
+    
+    # Clean button
+    clean_btn = jp.Button(a=card1, text="🧹 Clean Log File",
+                          style=button_primary, click=clean_log_clicked)
+    
+    # Blacklist accordion
+    create_blacklist_accordion(card1)
+    
+    # Status area for Step 1
+    status_area = jp.Div(a=card1, classes="mt-4 p-4 rounded-lg hidden", name="status")
+    wp.status_area = status_area
+    
+    # ==========================================
+    # STEP 2: Parse & Analyze
+    # ==========================================
+    card2 = create_step_card(inner, 2, "Parse & Analyze Logs",
+                             "Extract log templates and parameters using Drain3 algorithm.")
+    
+    # Path input for Step 2
+    path_input_2 = jp.Input(a=card2, type="text",
+                            placeholder="Uses cleaned file, or enter custom path",
+                            style=input_style, classes="mb-4")
+    wp.path_input_2 = path_input_2
+    
+    # Parse button (initially slightly dimmed)
+    parse_btn = jp.Button(a=card2, text="🔍 Parse & Export to Excel",
+                          style=button_primary,
+                          classes="opacity-70",
+                          click=parse_log_clicked)
+    wp.parse_btn = parse_btn
+    
+    # Status area for Step 2
+    status_area_2 = jp.Div(a=card2, classes="mt-4 p-4 rounded-lg hidden")
+    wp.status_area_2 = status_area_2
+    
+    # ==========================================
+    # Footer
+    # ==========================================
+    footer = jp.Div(a=inner, classes="text-center text-gray-400 text-sm mt-8")
+    footer.text = "Powered by Drain3 & JustPy"
+    
     return wp
 
-# Run the app
-jp.justpy(analyze_app)
+
+# ==========================================
+# RUN SERVER
+# ==========================================
+if __name__ == "__main__":
+    jp.justpy(log_analysis_page, port=8080)
