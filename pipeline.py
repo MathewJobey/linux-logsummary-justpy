@@ -285,25 +285,40 @@ def app():
 
         file_path = msg.page.state.uploaded_file
         
-        out, trash, kept, removed = clean_log_file(file_path) 
+        # Run the cleaner with the active blacklist
+        out, trash, kept, removed = clean_log_file(
+            file_path, 
+            extra_blacklist=msg.page.state.active_blacklist
+        ) 
         
         msg.page.state.cleaned_file_path = out
         
+        # --- 1. NEW: PRINT TO TERMINAL ---
+        print("\n--- [CLEANER REPORT] ---")
+        print(f"Input File:    {os.path.basename(file_path)}")
+        print(f"Kept Lines:    {kept} (Saved to: {os.path.basename(out)})")
+        print(f"Removed Lines: {removed}")
+        print("------------------------\n")
+        
+        # --- 2. NEW: FORMATTED UI MESSAGE ---
+        # We use <br> for newlines and a nested <div> for indentation
         status1.inner_html = f"""
-        ✅ <b>Cleaning Complete</b>
-        • Input: {os.path.basename(file_path)}
-        • Kept: {kept} lines (Saved to: {out})
-        • Removed: {removed} lines
+        <div class="font-bold text-lg mb-2">✅ Cleaning Complete</div>
+        <div class="ml-4">
+            • <b>Input:</b> {os.path.basename(file_path)}<br>
+            • <b>Kept:</b> {kept} lines <span class="text-gray-500 text-xs">(Saved to: {os.path.basename(out)})</span><br>
+            • <b>Removed:</b> {removed} lines
+        </div>
         """
-        status1.classes = "mt-4 text-sm font-mono text-green-700 bg-green-50 p-4 rounded border border-green-200"
+        status1.classes = "mt-4 text-sm font-mono text-green-800 bg-green-50 p-4 rounded border border-green-200 shadow-sm"
         
         # Unlock Step 2
         card2.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 transition-all duration-500"
         card2.delete_components()
         jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
         jp.Div(text=f"Ready to parse file: {out}", a=card2, classes="text-green-600 font-medium mb-4")
-        jp.Button(text="Proceed to Drain Parsing", a=card2, classes="bg-green-600 text-white font-bold py-2 px-4 rounded")
-
+        jp.Button(text="Proceed to Drain Parsing", a=card2, classes="bg-green-600 text-white font-bold py-2 px-4 rounded")    
+        
     # Connect Events
     upload_form.on('submit', handle_upload)
     btn_scan.on('click', run_scan)
