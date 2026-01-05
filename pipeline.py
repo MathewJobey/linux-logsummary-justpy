@@ -1,6 +1,7 @@
 import justpy as jp
 import os
 import sys
+import base64
 
 # 1. SETUP: Connect to 'code' folder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
@@ -66,16 +67,18 @@ def app():
     # ---------------------------------------------------------
     jp.Label(text="Select Log File:", a=card1, classes="block text-sm font-bold text-gray-700 mb-1")
     
-    # 1. The Container for the upload box
-    upload_box = jp.Div(a=card1, classes="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors mb-4")
+    # 1. CREATE A FORM (Required for file transfer)
+    upload_form = jp.Form(a=card1, classes="mb-6", enctype='multipart/form-data')
+    # 2. Container inside the form
+    upload_box = jp.Div(a=upload_form, classes="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors mb-2")
+    # 3. The File Input Component
+    file_input = jp.Input(a=upload_box, type='file', name='target_file', classes="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100")
+    # 4. Submit Button
+    upload_btn = jp.Button(text="⬆ Upload Selected File", type='submit', a=upload_form, classes="w-full bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded shadow hover:bg-slate-800 cursor-pointer")
+    # 5. Status text
+    upload_status = jp.Div(text="Please select a file and click Upload.", a=card1, classes="text-xs text-gray-500 mb-4 italic mt-2")
     
-    # 2. The File Input Component
-    file_input = jp.Input(a=upload_box, type='file', name='file_content',
-                          classes="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100")
     
-    # 3. Status text to confirm upload
-    upload_status = jp.Div(text="No file selected yet", a=card1, classes="text-xs text-gray-500 mb-4 italic")
-
     # ---------------------------------------------------------
     # B. Blacklist Controls
     # ---------------------------------------------------------
@@ -109,75 +112,52 @@ def app():
     # =========================================================
     # 1. NEW: Handle File Upload
     async def handle_upload(self, msg):
-        print("DEBUG: Upload started...")
-        
-        # 1. FIND THE FILE DATA
-        # Some versions use 'files', some use 'file_info'. We check both.
-        if 'files' in msg:
-            file_list = msg.files
-        elif 'file_info' in msg:
-            file_list = msg.file_info
-        else:
-            print("ERROR: No file data found in message.")
-            return
+        """Called when the FORM is submitted (contains file content)"""
+        # 1. Create Logs folder safely
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        logs_dir = os.path.join(base_dir, "Logs")
+        if not os.path.exists(logs_dir):
+            os.makedirs(logs_dir)
 
-        if file_list:
-            # Get the first file
-            info = file_list[0]
-            fname = info['name']
-            print(f"DEBUG: Found file: {fname}")
-            
-            # Update UI
-            upload_status.text = f"⏳ Processing {fname}..."
-            upload_status.classes = "text-xs text-blue-600 mb-4 font-bold"
-            
-            try:
-                # 2. CREATE FOLDER
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                logs_dir = os.path.join(base_dir, "Logs")
-                if not os.path.exists(logs_dir):
-                    os.makedirs(logs_dir)
-                
-                save_path = os.path.join(logs_dir, fname)
-                
-                # 3. DECODE CONTENT
-                # The content is usually in 'file_content' or just 'content'
-                # We check for the base64 header (comma)
-                raw_data = info.get('file_content', info.get('content', ''))
-                
-                import base64
-                if ',' in raw_data:
-                    content_string = raw_data.split(',')[1]
-                else:
-                    content_string = raw_data
+        # 2. Find the file component in the form data
+        file_component = None
+        for c in msg.form_data:
+            if c.type == 'file':
+                file_component = c
+                break
+        
+        # 3. Process the file
+        if file_component and hasattr(file_component, 'files') and len(file_component.files) > 0:
+            for i, v in enumerate(file_component.files):
+                if 'file_content' in v:
+                    # DECODE BASE64 CONTENT
+                    file_content = v.file_content
+                    decoded_content = base64.b64decode(file_content)
                     
-                decoded = base64.b64decode(content_string)
-                
-                # 4. SAVE
-                with open(save_path, 'wb') as f:
-                    f.write(decoded)
-                
-                # 5. SUCCESS
-                state.uploaded_file = save_path
-                upload_status.text = f"✅ Uploaded: {fname}"
-                upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
-                
-                # Unlock Clean Button
-                btn_clean.disabled = False
-                btn_clean.classes = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
-                
-                # Reset Step 2
-                card2.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none"
-                card2.delete_components()
-                jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-2 text-slate-800")
-                jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
-                
-            except Exception as e:
-                print(f"ERROR: {e}")
-                upload_status.text = f"Error: {e}"
-                upload_status.classes = "text-red-600 font-bold"
+                    fname = v.name
+                    save_path = os.path.join(logs_dir, fname)
+
+                    with open(save_path, 'wb') as f:
+                        f.write(decoded_content)
+                    
+                    # SUCCESS UI UPDATES
+                    state.uploaded_file = save_path
+                    upload_status.text = f"✅ Saved: {fname} to Logs/"
+                    upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
+                    
+                    # Enable Cleaner
+                    btn_clean.disabled = False
+                    btn_clean.classes = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
+                    
+                    # Reset Step 2
+                    card2.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none"
+                    card2.delete_components()
+                    jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-2 text-slate-800")
+                    jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
+                else:
+                    upload_status.text = "❌ Error: Browser sent empty file."
         else:
-            print("DEBUG: File list is empty.")
+            upload_status.text = "⚠️ No file selected."
                                
     async def run_scan(self, msg):
         # Use the file we just uploaded
@@ -230,9 +210,10 @@ def app():
         jp.Button(text="Proceed to Drain Parsing", a=card2, classes="bg-green-600 text-white font-bold py-2 px-4 rounded")
 
     # Connect Events
-    file_input.on('change', handle_upload)
+    upload_form.on('submit', handle_upload)
     btn_scan.on('click', run_scan)
     btn_clean.on('click', run_cleaner)
 
     return wp
+
 jp.justpy(app, port=8000)
