@@ -74,16 +74,16 @@ def app():
     # 3. The File Input Component
     file_input = jp.Input(a=upload_box, type='file', name='target_file', classes="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100")
     # 4. Submit Button
-    upload_btn = jp.Button(text="⬆ Upload Selected File", type='submit', a=upload_form, classes="w-full bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded shadow hover:bg-slate-800 cursor-pointer")
-    # 5. Status text
+    upload_btn = jp.Button(text="⬆ Upload Selected File ", type='submit', a=upload_form,
+                           classes="w-full bg-white text-blue-600 font-bold py-2 px-4 rounded border border-blue-200 hover:bg-blue-50 hover:border-blue-400 shadow-sm transition-all cursor-pointer text-sm")
     upload_status = jp.Div(text="Please select a file and click Upload.", a=card1, classes="text-xs text-gray-500 mb-4 italic mt-2")
     
     
     # ---------------------------------------------------------
     # B. Blacklist Controls
     # ---------------------------------------------------------
-    jp.Label(text="Manage Filters:", a=card1, classes="block text-sm font-bold text-gray-700 mt-4 mb-1")
-    create_accordion(card1, f"Default Keywords ({len(BASE_BLACKLIST)})", BASE_BLACKLIST)
+    jp.Label(text="Blacklisted Processes:", a=card1, classes="block text-sm font-bold text-gray-700 mt-4 mb-1")
+    create_accordion(card1, f"Default ({len(BASE_BLACKLIST)})", BASE_BLACKLIST)
 
     # --- NEW FEATURE: SCANNER ---
     scan_area = jp.Div(a=card1, classes="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4")
@@ -113,10 +113,13 @@ def app():
     # 1. NEW: Handle File Upload
     async def handle_upload(self, msg):
         """Called when the FORM is submitted (contains file content)"""
+        print("\n--- UPLOAD STARTED ---")
+        
         # 1. Create Logs folder safely
         base_dir = os.path.dirname(os.path.abspath(__file__))
         logs_dir = os.path.join(base_dir, "Logs")
         if not os.path.exists(logs_dir):
+            print(f"[INFO] Creating directory: {logs_dir}")
             os.makedirs(logs_dir)
 
         # 2. Find the file component in the form data
@@ -129,20 +132,30 @@ def app():
         # 3. Process the file
         if file_component and hasattr(file_component, 'files') and len(file_component.files) > 0:
             for i, v in enumerate(file_component.files):
+                fname = v.name
+                print(f"[INFO] Processing file: {fname}")
+                
                 if 'file_content' in v:
                     # DECODE BASE64 CONTENT
                     file_content = v.file_content
                     decoded_content = base64.b64decode(file_content)
                     
-                    fname = v.name
+                    # COUNT LINES (Split by newlines to count)
+                    line_count = len(decoded_content.splitlines())
+                    
                     save_path = os.path.join(logs_dir, fname)
+                    print(f"[INFO] Saving to: {save_path}")
 
                     with open(save_path, 'wb') as f:
                         f.write(decoded_content)
                     
+                    print(f"[SUCCESS] Wrote {len(decoded_content)} bytes.")
+                    print(f"[INFO] Total Log Lines: {line_count}")  # <--- NEW LINE HERE
+                    print("----------------------\n")
+                    
                     # SUCCESS UI UPDATES
                     state.uploaded_file = save_path
-                    upload_status.text = f"✅ Saved: {fname} to Logs/"
+                    upload_status.text = f"✅ Saved: {fname} ({line_count} lines)"
                     upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
                     
                     # Enable Cleaner
@@ -155,9 +168,11 @@ def app():
                     jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
                 else:
-                    upload_status.text = "❌ Error: Browser sent empty file."
+                    print("[ERROR] Empty file content received.")
+                    upload_status.text = "Error: Browser sent empty file."
         else:
-            upload_status.text = "⚠️ No file selected."
+            print("[WARNING] No file selected.")
+            upload_status.text = "No file selected."
                                
     async def run_scan(self, msg):
         # Use the file we just uploaded
