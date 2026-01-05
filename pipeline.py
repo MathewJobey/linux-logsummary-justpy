@@ -15,6 +15,7 @@ from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 class PipelineState:
     def __init__(self):
         self.cleaned_file_path = None
+        self.uploaded_file = None
 
 state = PipelineState()
 
@@ -47,9 +48,12 @@ def create_accordion(parent, title, items):
 
 # 4. MAIN APPLICATION
 def app():
+    
     wp = jp.WebPage(title="Linux Log Summarizer", classes="bg-gray-100 min-h-screen")
     layout = jp.Div(a=wp, classes="max-w-4xl mx-auto p-8 font-sans text-slate-800")
     
+    # --- CRITICAL FIX: State is now created NEW every time page loads ---
+    wp.state = PipelineState()
     # Title
     header = jp.Div(a=layout, classes="text-center mb-10")
     jp.Div(text="Linux Log Summarizer", a=header, classes="text-4xl font-bold tracking-tight text-gray-800 uppercase border-b-4 border-blue-500 pb-2")
@@ -86,8 +90,8 @@ def app():
     create_accordion(card1, f"Default ({len(BASE_BLACKLIST)})", BASE_BLACKLIST)
 
     # --- NEW FEATURE: SCANNER ---
+    jp.Label(text="Add To Blacklist:", a=card1, classes="block text-sm font-bold text-gray-700 mt-4 mb-1")
     scan_area = jp.Div(a=card1, classes="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4")
-    jp.Div(text="Not sure what to block? Scan the file for suggestions.", a=scan_area, classes="text-xs text-blue-800 mb-2")
     btn_scan = jp.Button(text="🔍 Scan for New Processes", a=scan_area, 
                          classes="bg-white border border-blue-300 text-blue-700 text-xs font-bold py-1 px-3 rounded hover:bg-blue-50")
     suggestions_box = jp.Div(a=scan_area, classes="mt-3 text-xs font-mono text-slate-600 grid grid-cols-3 gap-2 hidden")
@@ -154,7 +158,7 @@ def app():
                     print("----------------------\n")
                     
                     # SUCCESS UI UPDATES
-                    state.uploaded_file = save_path
+                    msg.page.state.uploaded_file = save_path
                     upload_status.text = f"✅ Saved: {fname} ({line_count} lines)"
                     upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
                     
@@ -175,15 +179,19 @@ def app():
             upload_status.text = "No file selected."
                                
     async def run_scan(self, msg):
-        # Use the file we just uploaded
-        if not hasattr(state, 'uploaded_file') or not state.uploaded_file:
-            suggestions_box.text = "Please upload a file first."
-            suggestions_box.classes = "text-red-500 block mt-2"
+        # 1. Check if a file has been uploaded for this page
+        if not msg.page.state.uploaded_file:
+            suggestions_box.delete_components() 
+            suggestions_box.text = "Please upload a file first!"
+            suggestions_box.classes = "italic text-red-600 text-xs mt-3 block"
             return
 
-        new_items = find_new_processes(state.uploaded_file)
+        # 2. If file exists, run the scan
+        new_items = find_new_processes(msg.page.state.uploaded_file)
         
         suggestions_box.delete_components()
+        suggestions_box.text = "" # <--- FIX: Explicitly wipe the old error text
+        
         if new_items:
             suggestions_box.classes = "mt-3 text-xs font-mono text-slate-600 grid grid-cols-3 gap-2 block"
             for item in new_items:
@@ -192,22 +200,21 @@ def app():
                        title=item)
         else:
             suggestions_box.text = "No new processes found."
-            suggestions_box.classes = "text-green-600 block mt-2"
+            suggestions_box.classes = "text-green-600 block mt-3"
 
     async def run_cleaner(self, msg):
         status1.text = "Running..."
         status1.classes = "mt-4 text-sm font-mono text-blue-600"
         
-        if not hasattr(state, 'uploaded_file') or not state.uploaded_file:
+        # Check page state
+        if not msg.page.state.uploaded_file:
             return
 
-        file_path = state.uploaded_file
+        file_path = msg.page.state.uploaded_file
         
-        # --- FIX: Removed the line reading 'custom_input' ---
-        # We just call the cleaner with the file path
         out, trash, kept, removed = clean_log_file(file_path) 
         
-        state.cleaned_file_path = out
+        msg.page.state.cleaned_file_path = out
         
         status1.inner_html = f"""
         ✅ <b>Cleaning Complete</b>
