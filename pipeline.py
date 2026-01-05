@@ -209,7 +209,7 @@ def app():
         msg.page.state.custom_blacklist.clear() # Clear old selections
         
         # Reset the "Add" button to original state
-        btn_add_blacklist.text = "➕ Add Selected to Blacklist"
+        btn_add_blacklist.text = "Add to Blacklist"
         btn_add_blacklist.classes = "hidden mt-2 w-full bg-green-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-green-700 transition-all"
         btn_add_blacklist.disabled = False
 
@@ -243,21 +243,28 @@ def app():
             msg.page.state.custom_blacklist.add(process_name)
             self.classes = "bg-green-100 border border-green-500 text-green-800 font-bold px-2 py-1 rounded cursor-pointer hover:bg-green-200 text-center truncate transition-colors shadow-inner"
 
-    # Logic: Save selected items to the global BASE_BLACKLIST
-    # 2. ADD TO BLACKLIST (Updates Header Count)
+    # 2. ADD TO BLACKLIST (Updates Header Count + Security Logging)
     async def add_to_blacklist(self, msg):
         selected_items = msg.page.state.custom_blacklist
         if not selected_items: return
+
+        print("\n--- BLACKLIST UPDATE INITIATED ---")
 
         count_added = 0
         for item in selected_items:
             if item not in msg.page.state.active_blacklist:
                 msg.page.state.active_blacklist.append(item)
                 count_added += 1
+                # PRINT 1: Log specific item added
+                print(f"[AUDIT] + Added process: '{item}'")
         
-        # REFRESH LIST & HEADER (This is the logic you wanted)
+        # PRINT 2: Log the full updated list for verification
+        print(f"[AUDIT] Total Count: {len(msg.page.state.active_blacklist)}")
+        print(f"[AUDIT] Current Active Blacklist: {sorted(msg.page.state.active_blacklist)}")
+        print("-------------------------------------------------\n")
+
+        # REFRESH LIST & HEADER
         blacklist_accordion.refresh_list(msg.page.state.active_blacklist)
-        # Update the text: "Current Blacklist (47)" -> "Current Blacklist (52)"
         blacklist_accordion.header_title.text = f"{blacklist_accordion.title} ({len(msg.page.state.active_blacklist)})"
         
         # Reset UI
