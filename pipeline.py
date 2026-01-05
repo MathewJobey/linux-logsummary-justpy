@@ -16,25 +16,34 @@ class PipelineState:
     def __init__(self):
         self.cleaned_file_path = None
         self.uploaded_file = None
+        self.custom_blacklist = set()
+        self.active_blacklist=[]
 
 state = PipelineState()
 
 # 3. HELPER: Collapsible List (Accordion)
-def create_accordion(parent, title, items):
+def create_active_accordion(parent, title, items):
     """Creates a toggleable list to show default keywords."""
     wrapper = jp.Div(a=parent, classes="mt-2 mb-4 border rounded bg-white")
     
     # Header
     header = jp.Div(a=wrapper, classes="p-2 cursor-pointer bg-gray-50 hover:bg-gray-100 flex items-center justify-between")
-    jp.Span(text=title, a=header, classes="text-sm font-semibold text-gray-700")
+    header_title = jp.Span(text=f"{title} ({len(items)})", a=header, classes="text-sm font-semibold text-gray-700")
     icon = jp.Span(text="▼", a=header, classes="text-xs text-gray-400")
     
     # Content (Hidden Grid)
     content = jp.Div(a=wrapper, classes="hidden p-3 bg-white grid grid-cols-4 gap-2 text-xs text-gray-600 border-t")
+    wrapper.content_box = content
+    wrapper.header_title = header_title
+    wrapper.title = title
     
-    for item in items:
-        jp.Span(text=item, a=content, classes="bg-gray-100 px-2 py-1 rounded text-center truncate")
+    def fill_items(item_list):
+        content.delete_components()
+        for item in item_list:
+            jp.Span(text=item, a=content, classes="bg-gray-100 px-2 py-1 rounded text-center truncate")
 
+    fill_items(items)
+    
     def toggle(self, msg):
         if "hidden" in content.classes:
             content.classes = content.classes.replace("hidden", "grid")
@@ -44,6 +53,8 @@ def create_accordion(parent, title, items):
             icon.text = "▼"
             
     header.on('click', toggle)
+    # Store the fill function on the wrapper so we can call it later
+    wrapper.refresh_list = fill_items 
     return wrapper
 
 # 4. MAIN APPLICATION
@@ -54,6 +65,7 @@ def app():
     
     # --- CRITICAL FIX: State is now created NEW every time page loads ---
     wp.state = PipelineState()
+    wp.state.active_blacklist = list(BASE_BLACKLIST)
     # Title
     header = jp.Div(a=layout, classes="text-center mb-10")
     jp.Div(text="Linux Log Summarizer", a=header, classes="text-4xl font-bold tracking-tight text-gray-800 uppercase border-b-4 border-blue-500 pb-2")
@@ -78,16 +90,16 @@ def app():
     # 3. The File Input Component
     file_input = jp.Input(a=upload_box, type='file', name='target_file', classes="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100")
     # 4. Submit Button
-    upload_btn = jp.Button(text="⬆ Upload Selected File ", type='submit', a=upload_form,
-                           classes="w-full bg-white text-blue-600 font-bold py-2 px-4 rounded border border-blue-200 hover:bg-blue-50 hover:border-blue-400 shadow-sm transition-all cursor-pointer text-sm")
+    upload_btn = jp.Button(text="⬆ Upload Selected File ", type='submit', a=upload_form, classes="w-full bg-white text-blue-600 font-bold py-2 px-4 rounded border border-blue-200 hover:bg-blue-50 hover:border-blue-400 shadow-sm transition-all cursor-pointer text-sm")
+    # 5. Status Output
     upload_status = jp.Div(text="Please select a file and click Upload.", a=card1, classes="text-xs text-gray-500 mb-4 italic mt-2")
-    
     
     # ---------------------------------------------------------
     # B. Blacklist Controls
     # ---------------------------------------------------------
     jp.Label(text="Blacklisted Processes:", a=card1, classes="block text-sm font-bold text-gray-700 mt-4 mb-1")
-    create_accordion(card1, f"Default ({len(BASE_BLACKLIST)})", BASE_BLACKLIST)
+    # Pass the LOCAL list (wp.state.active_blacklist), not the global one
+    blacklist_accordion = create_active_accordion(card1, "Current Blacklist", wp.state.active_blacklist)
 
     # --- NEW FEATURE: SCANNER ---
     jp.Label(text="Add To Blacklist:", a=card1, classes="block text-sm font-bold text-gray-700 mt-4 mb-1")
@@ -95,6 +107,8 @@ def app():
     btn_scan = jp.Button(text="🔍 Scan for New Processes", a=scan_area, 
                          classes="bg-white border border-blue-300 text-blue-700 text-xs font-bold py-1 px-3 rounded hover:bg-blue-50")
     suggestions_box = jp.Div(a=scan_area, classes="mt-3 text-xs font-mono text-slate-600 grid grid-cols-3 gap-2 hidden")
+    
+    btn_add_blacklist = jp.Button(text="+ Add To Blacklist", a=scan_area, classes="hidden mt-2 w-full bg-green-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-green-700 transition-all")
 
     # D. Action Button
     btn_clean = jp.Button(text="Run Cleaner Tool", a=card1, 
@@ -159,7 +173,7 @@ def app():
                     
                     # SUCCESS UI UPDATES
                     msg.page.state.uploaded_file = save_path
-                    upload_status.text = f"✅ Saved: {fname} ({line_count} lines)"
+                    upload_status.inner_html = f"✅ <i>Saved: {fname} ({line_count} lines)</i>"
                     upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
                     
                     # Enable Cleaner
@@ -179,29 +193,81 @@ def app():
             upload_status.text = "No file selected."
                                
     async def run_scan(self, msg):
-        # 1. Check if a file has been uploaded for this page
+        # 1. Check file
         if not msg.page.state.uploaded_file:
-            suggestions_box.delete_components() 
+            suggestions_box.delete_components()
             suggestions_box.text = "Please upload a file first!"
             suggestions_box.classes = "italic text-red-600 text-xs mt-3 block"
             return
 
-        # 2. If file exists, run the scan
+        # 2. Run Scan
         new_items = find_new_processes(msg.page.state.uploaded_file)
         
+        # 3. Reset UI
         suggestions_box.delete_components()
-        suggestions_box.text = "" # <--- FIX: Explicitly wipe the old error text
+        suggestions_box.text = ""
+        msg.page.state.custom_blacklist.clear() # Clear old selections
         
+        # Reset the "Add" button to original state
+        btn_add_blacklist.text = "➕ Add Selected to Blacklist"
+        btn_add_blacklist.classes = "hidden mt-2 w-full bg-green-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-green-700 transition-all"
+        btn_add_blacklist.disabled = False
+
         if new_items:
+            # Show grid
             suggestions_box.classes = "mt-3 text-xs font-mono text-slate-600 grid grid-cols-3 gap-2 block"
+            btn_add_blacklist.classes = btn_add_blacklist.classes.replace("hidden", "block") # Show button
+            
             for item in new_items:
-                jp.Div(text=item, a=suggestions_box, 
-                       classes="bg-white border px-2 py-1 rounded cursor-pointer hover:bg-blue-100 text-center truncate",
-                       title=item)
+                # Create interactive div
+                d = jp.Div(text=item, a=suggestions_box, 
+                       classes="bg-white border border-gray-300 px-2 py-1 rounded cursor-pointer hover:bg-blue-50 text-center truncate transition-colors",
+                       title="Click to select")
+                d.on('click', toggle_blacklist_item) # <--- Connect the toggle event
         else:
             suggestions_box.text = "No new processes found."
             suggestions_box.classes = "text-green-600 block mt-3"
+            btn_add_blacklist.classes = btn_add_blacklist.classes.replace("block", "hidden")
 
+    # Logic: Toggle item selection (White <-> Green)
+    def toggle_blacklist_item(self, msg):
+        process_name = self.text
+        
+        # Check if already selected
+        if process_name in msg.page.state.custom_blacklist:
+            # REMOVE IT
+            msg.page.state.custom_blacklist.remove(process_name)
+            self.classes = "bg-white border border-gray-300 px-2 py-1 rounded cursor-pointer hover:bg-blue-50 text-center truncate transition-colors"
+        else:
+            # ADD IT
+            msg.page.state.custom_blacklist.add(process_name)
+            self.classes = "bg-green-100 border border-green-500 text-green-800 font-bold px-2 py-1 rounded cursor-pointer hover:bg-green-200 text-center truncate transition-colors shadow-inner"
+
+    # Logic: Save selected items to the global BASE_BLACKLIST
+    # 2. ADD TO BLACKLIST (Updates Header Count)
+    async def add_to_blacklist(self, msg):
+        selected_items = msg.page.state.custom_blacklist
+        if not selected_items: return
+
+        count_added = 0
+        for item in selected_items:
+            if item not in msg.page.state.active_blacklist:
+                msg.page.state.active_blacklist.append(item)
+                count_added += 1
+        
+        # REFRESH LIST & HEADER (This is the logic you wanted)
+        blacklist_accordion.refresh_list(msg.page.state.active_blacklist)
+        # Update the text: "Current Blacklist (47)" -> "Current Blacklist (52)"
+        blacklist_accordion.header_title.text = f"{blacklist_accordion.title} ({len(msg.page.state.active_blacklist)})"
+        
+        # Reset UI
+        suggestions_box.delete_components()
+        suggestions_box.inner_html = f"✅ <i>Merged {count_added} new items into blacklist!</i>"
+        suggestions_box.classes = "text-green-600 font-bold text-xs mt-3 block p-2 bg-green-50 border border-green-200 rounded"
+        
+        btn_add_blacklist.classes = btn_add_blacklist.classes.replace("block", "hidden")
+        msg.page.state.custom_blacklist.clear()
+        
     async def run_cleaner(self, msg):
         status1.text = "Running..."
         status1.classes = "mt-4 text-sm font-mono text-blue-600"
@@ -235,7 +301,7 @@ def app():
     upload_form.on('submit', handle_upload)
     btn_scan.on('click', run_scan)
     btn_clean.on('click', run_cleaner)
-
+    btn_add_blacklist.on('click', add_to_blacklist)
     return wp
 
 jp.justpy(app, port=8000)
