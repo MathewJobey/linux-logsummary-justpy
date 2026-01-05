@@ -46,7 +46,7 @@ def create_accordion(parent, title, items):
 
 # 4. MAIN APPLICATION
 def app():
-    wp = jp.WebPage(title="Log Pipeline")
+    wp = jp.WebPage(title="Linux Log Summarizer", classes="bg-gray-100 min-h-screen")
     layout = jp.Div(a=wp, classes="max-w-4xl mx-auto p-8 font-sans text-slate-800")
     
     # Title
@@ -70,7 +70,7 @@ def app():
     upload_box = jp.Div(a=card1, classes="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors mb-4")
     
     # 2. The File Input Component
-    file_input = jp.Input(a=upload_box, type='file', 
+    file_input = jp.Input(a=upload_box, type='file', name='file_content',
                           classes="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100")
     
     # 3. Status text to confirm upload
@@ -109,35 +109,76 @@ def app():
     # =========================================================
     # 1. NEW: Handle File Upload
     async def handle_upload(self, msg):
-        if msg.file_info:
-            info = msg.file_info[0]
-            fname = info['name']
-            
-            # Save the file to local disk (Logs folder)
-            save_path = os.path.join("Logs", fname)
-            
-            # JustPy sends file content as base64 encoded string
-            import base64
-            content = base64.b64decode(info['file_content'].split(',')[1])
-            
-            with open(save_path, 'wb') as f:
-                f.write(content)
-            
-            # Update State & UI
-            state.uploaded_file = save_path # Temporary storage for this step
-            upload_status.text = f"✅ Uploaded: {fname} (Saved to {save_path})"
-            upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
-            
-            # Enable the Clean Button
-            btn_clean.disabled = False
-            btn_clean.classes = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
-            
-            # Reset Step 2 if re-uploading
-            card2.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none"
-            card2.delete_components()
-            jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-2 text-slate-800")
-            jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
+        print("DEBUG: Upload started...")
+        
+        # 1. FIND THE FILE DATA
+        # Some versions use 'files', some use 'file_info'. We check both.
+        if 'files' in msg:
+            file_list = msg.files
+        elif 'file_info' in msg:
+            file_list = msg.file_info
+        else:
+            print("ERROR: No file data found in message.")
+            return
 
+        if file_list:
+            # Get the first file
+            info = file_list[0]
+            fname = info['name']
+            print(f"DEBUG: Found file: {fname}")
+            
+            # Update UI
+            upload_status.text = f"⏳ Processing {fname}..."
+            upload_status.classes = "text-xs text-blue-600 mb-4 font-bold"
+            
+            try:
+                # 2. CREATE FOLDER
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                logs_dir = os.path.join(base_dir, "Logs")
+                if not os.path.exists(logs_dir):
+                    os.makedirs(logs_dir)
+                
+                save_path = os.path.join(logs_dir, fname)
+                
+                # 3. DECODE CONTENT
+                # The content is usually in 'file_content' or just 'content'
+                # We check for the base64 header (comma)
+                raw_data = info.get('file_content', info.get('content', ''))
+                
+                import base64
+                if ',' in raw_data:
+                    content_string = raw_data.split(',')[1]
+                else:
+                    content_string = raw_data
+                    
+                decoded = base64.b64decode(content_string)
+                
+                # 4. SAVE
+                with open(save_path, 'wb') as f:
+                    f.write(decoded)
+                
+                # 5. SUCCESS
+                state.uploaded_file = save_path
+                upload_status.text = f"✅ Uploaded: {fname}"
+                upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
+                
+                # Unlock Clean Button
+                btn_clean.disabled = False
+                btn_clean.classes = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
+                
+                # Reset Step 2
+                card2.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none"
+                card2.delete_components()
+                jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-2 text-slate-800")
+                jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
+                
+            except Exception as e:
+                print(f"ERROR: {e}")
+                upload_status.text = f"Error: {e}"
+                upload_status.classes = "text-red-600 font-bold"
+        else:
+            print("DEBUG: File list is empty.")
+                               
     async def run_scan(self, msg):
         # Use the file we just uploaded
         if not hasattr(state, 'uploaded_file') or not state.uploaded_file:
@@ -162,14 +203,15 @@ def app():
         status1.text = "Running..."
         status1.classes = "mt-4 text-sm font-mono text-blue-600"
         
-        # Use the uploaded file path
-        if not hasattr(state, 'uploaded_file'):
+        if not hasattr(state, 'uploaded_file') or not state.uploaded_file:
             return
 
         file_path = state.uploaded_file
-        custom_words = [w.strip() for w in custom_input.value.split(',') if w.strip()]
         
-        out, trash, kept, removed = clean_log_file(file_path, extra_blacklist=custom_words)
+        # --- FIX: Removed the line reading 'custom_input' ---
+        # We just call the cleaner with the file path
+        out, trash, kept, removed = clean_log_file(file_path) 
+        
         state.cleaned_file_path = out
         
         status1.inner_html = f"""
