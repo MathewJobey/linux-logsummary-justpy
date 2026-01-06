@@ -205,6 +205,7 @@ def app():
         # 3. Reset UI
         suggestions_box.delete_components()
         suggestions_box.inner_html = ""
+        suggestions_box.text = ""
         msg.page.state.custom_blacklist.clear() # Clear old selections
         
         # Reset the "Add" button to original state
