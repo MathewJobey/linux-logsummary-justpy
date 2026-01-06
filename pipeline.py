@@ -111,8 +111,7 @@ def app():
     btn_add_blacklist = jp.Button(text="+ Add To Blacklist", a=scan_area, classes="hidden mt-2 w-full bg-green-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-green-700 transition-all")
 
     # D. Action Button
-    btn_clean = jp.Button(text="Run Cleaner Tool", a=card1, 
-                          classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all")
+    btn_clean = jp.Button(text="Run Cleaner Tool", a=card1, disabled=True, title="no file uploaded yet!", classes="w-full bg-gray-400 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-not-allowed")
     
     # Status Output
     status1 = jp.Div(text="", a=card1, classes="mt-4 text-sm font-mono whitespace-pre-wrap")
@@ -178,6 +177,7 @@ def app():
                     
                     # Enable Cleaner
                     btn_clean.disabled = False
+                    btn_clean.title = "Click to start cleaning"
                     btn_clean.classes = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
                     
                     # Reset Step 2
