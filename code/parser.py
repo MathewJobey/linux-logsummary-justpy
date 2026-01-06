@@ -206,8 +206,9 @@ def parse_log_file(target_file):
     output_excel = f"{base_name}_analysis.xlsx"
     rows = []
 
-    print(f"[PARSER] Reading from: {target_file}")
-    rows = []
+    # --- UPDATED TERMINAL OUTPUT START ---
+    print("\n------ [PARSING INITIATED] ------")
+    print(f"Input File:       {os.path.basename(target_file)}")
 
     with open(target_file, 'r', encoding='utf-8', errors='ignore') as f:
         for line in f:
@@ -237,7 +238,11 @@ def parse_log_file(target_file):
 
     if not rows:
         return None, 0, 0
-    print(f"[PARSER] Analysis complete. Saving to Excel...")
+    # --- UPDATED TERMINAL OUTPUT END ---
+    unique_clusters = len(template_miner.drain.clusters)
+    print(f"Unique Templates: {unique_clusters}")
+    print("---------------------------------")
+    print(f"File Saved To:    {os.path.abspath(output_excel)}\n")
         
         # Create DataFrames
     df_logs = pd.DataFrame(rows)

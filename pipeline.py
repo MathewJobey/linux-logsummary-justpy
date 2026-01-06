@@ -119,7 +119,7 @@ def app():
     # STEP 2: PARSE (Placeholder for now)
     # =========================================================
     card2 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none")
-    jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-2 text-slate-800")
+    jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold italic mb-2 text-slate-800")
     jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
 
 
@@ -172,7 +172,7 @@ def app():
                     # SUCCESS UI UPDATES
                     msg.page.state.uploaded_file = save_path
                     upload_status.inner_html = f"✅ <i>Saved: {fname} ({line_count} lines)</i>"
-                    upload_status.classes = "text-xs text-green-600 mb-4"
+                    upload_status.classes = "text-xs text-green-600 mt-2 mb-4"
                     
                     # Enable Cleaner
                     btn_clean.disabled = False
@@ -182,7 +182,7 @@ def app():
                     # Reset Step 2
                     card2.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none"
                     card2.delete_components()
-                    jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-2 text-slate-800")
+                    jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold italic mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
                 else:
                     print("[ERROR] Empty file content received.")
@@ -296,9 +296,11 @@ def app():
         # --- 1. NEW: PRINT TO TERMINAL ---
         print("\n--- [CLEANER REPORT] ---")
         print(f"Input File:    {os.path.basename(file_path)}")
-        print(f"Kept Lines:    {kept} (Saved to: {os.path.basename(out)})")
+        print(f"Kept Lines:    {kept}")
         print(f"Removed Lines: {removed}")
-        print("------------------------\n")
+        print("------------------------")
+        # Full path printed outside the separator
+        print(f"File Saved to: {os.path.abspath(out)}\n")
         
         # --- 2. NEW: FORMATTED UI MESSAGE ---
         # We use <br> for newlines and a nested <div> for indentation
@@ -306,21 +308,27 @@ def app():
         <div class="font-bold text-lg mb-2">✅ Cleaning Complete</div>
         <div class="ml-4">
             • <b>Input:</b> {os.path.basename(file_path)}<br>
-            • <b>Kept:</b> {kept} lines <span class="text-gray-500 text-xs">(Saved to: {os.path.basename(out)})</span><br>
+            • <b>Kept:</b> {kept} lines <br>
             • <b>Removed:</b> {removed} lines
         </div>
         """
         status1.classes = "mt-4 text-sm font-mono text-green-800 bg-green-50 p-4 rounded border border-green-200 shadow-sm"
-        
+        # --- NEW: Output File (Blue Italic outside box) ---
+        jp.Div(
+            text=f"(Output File: {os.path.basename(out)})",
+            a=card1,
+            classes="text-xs text-blue-600 italic mt-2 mb-4"
+        )
+            
         # Unlock Step 2
         card2.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 transition-all duration-500"
         card2.delete_components()
-        jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+        jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
         jp.Div(text=f"Ready to parse file: {out}", a=card2, classes="text-green-600 font-medium mb-4")
         
         # --- CONNECT THE PARSER BUTTON ---
-        btn_parse = jp.Button(text="Proceed to Drain Parsing", a=card2, 
-                              classes="bg-green-600 text-white font-bold py-2 px-4 rounded shadow hover:bg-green-700 transition-all")
+        btn_parse = jp.Button(text="PARSE", a=card2, 
+                              classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
         btn_parse.on('click', run_parser) # <--- THIS IS THE KEY LINK
         
     # Connect Events
@@ -349,21 +357,21 @@ def app():
             excel_path, total_lines, clusters = parse_log_file(cleaned_file)
             # 3. SHOW RESULTS
             card2.delete_components()
-            jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
-            # Success Message
-            jp.Div(text="✅ Parsing Successful!", a=card2, classes="text-green-700 font-bold text-lg mb-2")
-            # Stats Grid
-            stats_grid = jp.Div(a=card2, classes="grid grid-cols-2 gap-4 mb-4 bg-gray-50 p-4 rounded border")
-            jp.Div(text=f"Total Logs Processed: {total_lines}", a=stats_grid, classes="text-sm text-gray-700 font-mono")
-            jp.Div(text=f"Unique Patterns Found: {clusters}", a=stats_grid, classes="text-sm text-gray-700 font-mono")
-            # Download Button (Link to the file)
-            # Note: JustPy serves static files from root. We assume 'Logs' is accessible or we give absolute path.
-            # For simplicity, we just show the path here.
-            jp.Div(text=f"Output File: {os.path.basename(excel_path)}", a=card2, classes="text-xs text-blue-600 mb-4")
+            jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
-            jp.A(text="⬇️ Open/Download Excel File", href=f"/Logs/{os.path.basename(excel_path)}", 
-                 a=card2, target="_blank",
-                 classes="inline-block bg-blue-600 text-white font-bold py-2 px-4 rounded shadow hover:bg-blue-700 transition-all")
+            # --- NEW: Formatted Status Box (Matches Cleaner Style) ---
+            parse_status = jp.Div(a=card2, classes="mt-4 text-sm font-mono text-green-800 bg-green-50 p-4 rounded border border-green-200 shadow-sm mb-2")
+            parse_status.inner_html = f"""
+            <div class="font-bold text-lg mb-2">✅ Parsing Complete</div>
+            <div class="ml-4">
+                • <b>Input:</b> {os.path.basename(cleaned_file)}<br>
+                • <b>Unique templates:</b> {clusters}
+            </div>
+            """
+            
+            # --- NEW: Output File (Blue Italic outside box) ---
+            jp.Div(text=f"(Output File: {os.path.basename(excel_path)})", a=card2, classes="text-xs text-blue-600 italic mb-4")
+            
         except Exception as e:
             print(f"[ERROR] Parsing failed: {e}")
             card2.delete_components()
