@@ -8,8 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 
 # Import your tools
 from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
-# We will import parser later when we get to Step 2, but for now we just need the placeholder
-# from parser import parse_log_file 
+from parser import parse_log_file 
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -108,10 +107,10 @@ def app():
                          classes="bg-white border border-blue-300 text-blue-700 text-xs font-bold py-1 px-3 rounded hover:bg-blue-50")
     suggestions_box = jp.Div(a=scan_area, classes="mt-3 text-xs font-mono text-slate-600 grid grid-cols-3 gap-2 hidden")
     
-    btn_add_blacklist = jp.Button(text="+ Add To Blacklist", a=scan_area, classes="hidden mt-2 w-full bg-green-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-green-700 transition-all")
+    btn_add_blacklist = jp.Button(text="+ Add To Blacklist", a=scan_area, classes="hidden mt-2 w-full bg-blue-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-blue-700 transition-all border border-blue-700")
 
     # D. Action Button
-    btn_clean = jp.Button(text="Run Cleaner Tool", a=card1, disabled=True, title="no file uploaded yet!", classes="w-full bg-gray-400 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-not-allowed")
+    btn_clean = jp.Button(text="CLEAN", a=card1, disabled=True, title="no file uploaded yet!", classes="w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed")
     
     # Status Output
     status1 = jp.Div(text="", a=card1, classes="mt-4 text-sm font-mono whitespace-pre-wrap")
@@ -173,7 +172,7 @@ def app():
                     # SUCCESS UI UPDATES
                     msg.page.state.uploaded_file = save_path
                     upload_status.inner_html = f"✅ <i>Saved: {fname} ({line_count} lines)</i>"
-                    upload_status.classes = "text-xs text-green-600 mb-4 font-bold"
+                    upload_status.classes = "text-xs text-green-600 mb-4"
                     
                     # Enable Cleaner
                     btn_clean.disabled = False
@@ -209,8 +208,8 @@ def app():
         msg.page.state.custom_blacklist.clear() # Clear old selections
         
         # Reset the "Add" button to original state
-        btn_add_blacklist.text = "Add to Blacklist"
-        btn_add_blacklist.classes = "hidden mt-2 w-full bg-green-600 text-white font-bold py-2 px-4 rounded text-xs hover:bg-green-700 transition-all"
+        btn_add_blacklist.text = "Add To Blacklist"
+        btn_add_blacklist.classes = "hidden mt-3 w-full bg-blue-600 text-white font-bold py-2 px-4 rounded shadow-sm text-xs hover:bg-blue-700 transition-all border border-blue-700"
         btn_add_blacklist.disabled = False
 
         if new_items:
@@ -226,7 +225,7 @@ def app():
                 d.on('click', toggle_blacklist_item) # <--- Connect the toggle event
         else:
             suggestions_box.text = "No new processes found."
-            suggestions_box.classes = "text-green-600 block mt-3"
+            suggestions_box.classes = "text-blue-600 block mt-3"
             btn_add_blacklist.classes = btn_add_blacklist.classes.replace("block", "hidden")
 
     # Logic: Toggle item selection (White <-> Green)
@@ -241,7 +240,7 @@ def app():
         else:
             # ADD IT
             msg.page.state.custom_blacklist.add(process_name)
-            self.classes = "bg-green-100 border border-green-500 text-green-800 font-bold px-2 py-1 rounded cursor-pointer hover:bg-green-200 text-center truncate transition-colors shadow-inner"
+            self.classes = "bg-blue-100 border border-blue-500 text-blue-800 font-bold px-2 py-1 rounded cursor-pointer hover:bg-blue-200 text-center truncate transition-colors shadow-inner"
 
     # 2. ADD TO BLACKLIST (Updates Header Count + Security Logging)
     async def add_to_blacklist(self, msg):
@@ -269,7 +268,7 @@ def app():
         
         # Reset UI
         suggestions_box.delete_components()
-        suggestions_box.inner_html = f"✅ <i>Merged {count_added} new items into blacklist!</i>"
+        suggestions_box.inner_html = f"<i>{count_added} items added to blacklist!</i>"
         suggestions_box.classes = "text-green-600 font-bold text-xs mt-3 block p-2 bg-green-50 border border-green-200 rounded"
         
         btn_add_blacklist.classes = btn_add_blacklist.classes.replace("block", "hidden")
@@ -317,13 +316,57 @@ def app():
         card2.delete_components()
         jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
         jp.Div(text=f"Ready to parse file: {out}", a=card2, classes="text-green-600 font-medium mb-4")
-        jp.Button(text="Proceed to Drain Parsing", a=card2, classes="bg-green-600 text-white font-bold py-2 px-4 rounded")    
+        
+        # --- CONNECT THE PARSER BUTTON ---
+        btn_parse = jp.Button(text="Proceed to Drain Parsing", a=card2, 
+                              classes="bg-green-600 text-white font-bold py-2 px-4 rounded shadow hover:bg-green-700 transition-all")
+        btn_parse.on('click', run_parser) # <--- THIS IS THE KEY LINK
         
     # Connect Events
     upload_form.on('submit', handle_upload)
     btn_scan.on('click', run_scan)
     btn_clean.on('click', run_cleaner)
     btn_add_blacklist.on('click', add_to_blacklist)
+    
+    # ------------------------------------------------------------------
+    # 3. NEW: RUN PARSER LOGIC
+    # ------------------------------------------------------------------
+    async def run_parser(self, msg):
+        # 1. Update UI to show "Processing"
+        self.text = "⏳ Parsing..."
+        self.disabled = True
+        self.classes = "bg-gray-400 text-white font-bold py-2 px-4 rounded cursor-wait"
+        
+        # Get the cleaned file path from state
+        cleaned_file = msg.page.state.cleaned_file_path
+        if not cleaned_file or not os.path.exists(cleaned_file):
+            print("[ERROR] Cleaned file not found.")
+            return
+        
+        try:
+            # 2. RUN THE PARSER
+            excel_path, total_lines, clusters = parse_log_file(cleaned_file)
+            # 3. SHOW RESULTS
+            card2.delete_components()
+            jp.Div(text="Step 2: Parse & Export", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            # Success Message
+            jp.Div(text="✅ Parsing Successful!", a=card2, classes="text-green-700 font-bold text-lg mb-2")
+            # Stats Grid
+            stats_grid = jp.Div(a=card2, classes="grid grid-cols-2 gap-4 mb-4 bg-gray-50 p-4 rounded border")
+            jp.Div(text=f"Total Logs Processed: {total_lines}", a=stats_grid, classes="text-sm text-gray-700 font-mono")
+            jp.Div(text=f"Unique Patterns Found: {clusters}", a=stats_grid, classes="text-sm text-gray-700 font-mono")
+            # Download Button (Link to the file)
+            # Note: JustPy serves static files from root. We assume 'Logs' is accessible or we give absolute path.
+            # For simplicity, we just show the path here.
+            jp.Div(text=f"Output File: {os.path.basename(excel_path)}", a=card2, classes="text-xs text-blue-600 mb-4")
+            
+            jp.A(text="⬇️ Open/Download Excel File", href=f"/Logs/{os.path.basename(excel_path)}", 
+                 a=card2, target="_blank",
+                 classes="inline-block bg-blue-600 text-white font-bold py-2 px-4 rounded shadow hover:bg-blue-700 transition-all")
+        except Exception as e:
+            print(f"[ERROR] Parsing failed: {e}")
+            card2.delete_components()
+            jp.Div(text=f"❌ Error: {str(e)}", a=card2, classes="text-red-600 font-bold")
     return wp
 
 jp.justpy(app, port=8000)
