@@ -7,18 +7,17 @@ from drain3.template_miner_config import TemplateMinerConfig
 from drain3.masking import MaskingInstruction
 
 # ==========================================
-# 1. SETUP
+# 1. SETUP + CONFIGURATION
 # ==========================================
-config = TemplateMinerConfig()
-config.profiling_enabled = False
-config.drain_depth = 7 
-config.drain_sim_th = 0.75 
-config.mask_prefix = "" 
-config.mask_suffix = ""
+def get_miner_config():
+    config = TemplateMinerConfig()
+    config.profiling_enabled = False
+    config.drain_depth = 7 
+    config.drain_sim_th = 0.75 
+    config.mask_prefix = "" 
+    config.mask_suffix = ""
 
-config.masking_instructions = [
-    # 1. SPECIFIC FIXES (High Priority)
-    
+    config.masking_instructions = [
     # FIX: Added spaces around '=' to match the raw log format "errno = 98"
     MaskingInstruction(r"\(Address already in use \(errno = \d+\)\)", "(Address already in use (errno = <NUM>))"),
     MaskingInstruction(r"FAILED LOGIN\s+\d+", "FAILED LOGIN <NUM>"),
@@ -40,14 +39,11 @@ config.masking_instructions = [
     
     # FTP Rule
     MaskingInstruction(r"ANONYMOUS FTP LOGIN FROM .+", "ANONYMOUS FTP LOGIN FROM <RHOST>"),
-
-    # --- START OF NEW CHANGES ---
     # Captures "euid=0"
     MaskingInstruction(r"\beuid=\d+", "euid=<EUID>"),
-    
     # Captures "tty=NODEVssh" or "tty=pts/0"
     MaskingInstruction(r"\btty=\S+", "tty=<TTY>"),
-    # --- END OF NEW CHANGES ---
+    # ---------------------------------------------------
 
     # 2. GENERIC VARIABLES (Low Priority)
     MaskingInstruction(r"\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}", "<TIMESTAMP>"),
@@ -70,8 +66,7 @@ config.masking_instructions = [
     # FIX: Handle naked IPs (matches "1.2.3.4" -> "<RHOST>")
     MaskingInstruction(r"((?<!\d)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?!\d)(?::\d+)?)", "<RHOST>"),
 ]
-
-template_miner = TemplateMiner(config=config)
+    return config
 
 # ==========================================
 # 2. HELPER FUNCTIONS
@@ -81,8 +76,7 @@ def remove_trailing_timestamp(text):
     Removes the redundant 'at Sat Jun 18...' timestamp from the end of the line.
     """
     # Regex for: " at Sat Jun 18 02:08:12 2005" (at the end of string)
-    trailing_regex = r"\s+at\s+\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}$"
-    return re.sub(trailing_regex, "", text)
+    return re.sub(r"\s+at\s+\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}$", "", text)
 
 def normalize_login_uid(line):
     """
@@ -93,33 +87,19 @@ def normalize_login_uid(line):
 def preprocess_log(log_line):
     # 1. Remove the redundant trailing timestamp first
     log_line = remove_trailing_timestamp(log_line)
-    
     log_line = normalize_ftpd_rhost(log_line)
     
     # 2. Standardize the Header
     header_regex = r'^([A-Z][a-z]{2}\s+\d+\s\d{2}:\d{2}:\d{2})\s+(\S+)'
     log_line = re.sub(header_regex, '<TIMESTAMP> <HOSTNAME>', log_line)
-    
     return log_line.strip()
 
 def normalize_ftpd_rhost(line):
-    pattern = re.compile(
-        r"(connection from)\s+(\d{1,3}(?:\.\d{1,3}){3})\s*\(([^)]*)\)"
-    )
-
+    pattern = re.compile(r"(connection from)\s+(\d{1,3}(?:\.\d{1,3}){3})\s*\(([^)]*)\)")
     def replacer(match):
-        prefix = match.group(1)
-        outer_ip = match.group(2)
-        inner = match.group(3).strip()
-
-        # Always preserve structure
-        if inner:
-            return f"{prefix} {outer_ip} ({inner})"
-        else:
-            return f"{prefix} {outer_ip}"
-
+        prefix, outer_ip, inner = match.group(1), match.group(2), match.group(3).strip()
+        return f"{prefix} {outer_ip} ({inner})" if inner else f"{prefix} {outer_ip}"
     return pattern.sub(replacer, line)
-
 
 def extract_named_parameters(clean_raw_line, template):
     """
@@ -131,8 +111,7 @@ def extract_named_parameters(clean_raw_line, template):
     # --- FIX: Allow flexible whitespace (Non-Greedy) ---
     # Use \s+? so it matches the minimum delimiter spaces (1) 
     # and leaves the rest for the <USERNAME> capture group.
-    regex_pattern = regex_pattern.replace(r"\ ", r"\s+?")
-    regex_pattern = regex_pattern.replace(" ", r"\s+?")
+    regex_pattern = regex_pattern.replace(r"\ ", r"\s+?").replace(" ", r"\s+?")
     
     # --- FIX START: Handle Drain Wildcards (*) ---
     # If Drain generates a '*', re.escape turns it into '\*'.
@@ -210,28 +189,27 @@ def extract_named_parameters(clean_raw_line, template):
     return json.dumps(params)
 
 # ==========================================
-# 3. EXECUTION
+# 3. MAIN PARSING FUNCTION
 # ==========================================
-print("="*40)
-user_input = input("Enter log filename to scan (default: Linux_2k_clean.log): ").strip()
+def parse_log_file(target_file):
+    """
+    Parses the given log file using Drain3 and exports to Excel.
+    Returns: (output_excel_path, total_lines, unique_clusters)
+    """
+    if not os.path.exists(target_file):
+        raise FileNotFoundError(f"File not found: {target_file}")
 
-if not user_input:
-    target_file = 'Linux_2k_clean.log'
-else:
-    target_file = user_input
+    # Initialize a FRESH miner for every run
+    config = get_miner_config()
+    template_miner = TemplateMiner(config=config)
+    base_name, _ = os.path.splitext(target_file)
+    output_excel = f"{base_name}_analysis.xlsx"
+    rows = []
 
-base_name, _ = os.path.splitext(target_file)
-output_excel = f"{base_name}_analysis.xlsx"
+    print(f"[PARSER] Reading from: {target_file}")
+    rows = []
 
-print(f"Reading from: {target_file}")
-print(f"Writing to:   {output_excel}")
-print("="*40)
-
-rows = []
-
-try:
-    with open(target_file, 'r') as f:
-        print("Processing logs... (This may take a moment)")
+    with open(target_file, 'r', encoding='utf-8', errors='ignore') as f:
         for line in f:
             raw_line = line.strip()
             if not raw_line: continue
@@ -244,11 +222,8 @@ try:
             cluster_id = result['cluster_id']
             
             # 2. Extract Variables
-            # CRITICAL: Cleaning for extraction must match preprocessing logic
             clean_raw_line = remove_trailing_timestamp(raw_line)
             clean_raw_line = normalize_login_uid(clean_raw_line)
-            
-            # --- FIX: Normalize the line for extraction too ---
             clean_raw_line = normalize_ftpd_rhost(clean_raw_line)
             
             params_json = extract_named_parameters(clean_raw_line, template)
@@ -260,44 +235,29 @@ try:
                 "Parameters": params_json
             })
 
-    if rows:
-        print(f"Analysis complete! Preparing Excel file...")
+    if not rows:
+        return None, 0, 0
+    print(f"[PARSER] Analysis complete. Saving to Excel...")
         
-        # --- SHEET 1: Detailed Logs ---
-        df_logs = pd.DataFrame(rows)
-        df_logs = df_logs.sort_values(by="Template ID")
-        df_logs = df_logs[["Raw Log", "Drained Named Log", "Template ID", "Parameters"]]
+        # Create DataFrames
+    df_logs = pd.DataFrame(rows)
+    df_logs = df_logs.sort_values(by="Template ID")
+    df_logs = df_logs[["Raw Log", "Drained Named Log", "Template ID", "Parameters"]]
+    
+    clusters = []
+    for cluster in template_miner.drain.clusters:
+        clusters.append({
+            "Template ID": cluster.cluster_id,
+            "Template Pattern": cluster.get_template(),
+            "Occurrences": cluster.size
+        })
+    df_summary = pd.DataFrame(clusters)
+    df_summary = df_summary.sort_values(by="Occurrences", ascending=False)
+    
+    # Write to Excel
+    with pd.ExcelWriter(output_excel) as writer:
+        df_logs.to_excel(writer, sheet_name='Log Analysis', index=False)
+        df_summary.to_excel(writer, sheet_name='Template Summary', index=False)
+    
+    return output_excel, len(df_logs), len(df_summary)
         
-        # --- SHEET 2: Template Summary ---
-        # Extract cluster stats directly from the miner
-        clusters = []
-        for cluster in template_miner.drain.clusters:
-            clusters.append({
-                "Template ID": cluster.cluster_id,
-                "Template Pattern": cluster.get_template(),
-                "Occurrences": cluster.size
-            })
-        
-        df_summary = pd.DataFrame(clusters)
-        # Sort by Occurrences (Highest count at top)
-        df_summary = df_summary.sort_values(by="Occurrences", ascending=False)
-        
-        # --- WRITE BOTH SHEETS TO EXCEL ---
-        with pd.ExcelWriter(output_excel) as writer:
-            df_logs.to_excel(writer, sheet_name='Log Analysis', index=False)
-            df_summary.to_excel(writer, sheet_name='Template Summary', index=False)
-        
-        print("="*40)
-        print("SUCCESS!")
-        print(f"File saved: {output_excel}")
-        print(f"Total Lines: {len(df_logs)}")
-        print(f"Unique Clusters: {len(df_summary)}")
-        print("="*40)
-    else:
-        print("Warning: No logs found in the file.")
-
-except FileNotFoundError:
-    print(f"Error: '{target_file}' not found.")
-    print("Please check the filename and try again.")
-except Exception as e:
-    print(f"An error occurred: {e}")
