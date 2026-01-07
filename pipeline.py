@@ -191,6 +191,11 @@ def app():
                     card2.delete_components()
                     jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold italic mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
+                    # --- ADD THIS: RESET STEP 3 ---
+                    card3.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
+                    card3.delete_components()
+                    jp.Div(text="Step 3: Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
+                    jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
                 else:
                     print("[ERROR] Empty file content received.")
                     upload_status.text = "Error: Browser sent empty file."
@@ -334,6 +339,12 @@ def app():
         jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
         jp.Div(text=f"Ready to parse file: {out}", a=card2, classes="text-green-600 font-medium mb-4")
         
+        # --- ADD THIS: RESET STEP 3 (Re-lock it if we re-cleaned) ---
+        card3.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
+        card3.delete_components()
+        jp.Div(text="Step 3: Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
+        jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
+        
         # --- CONNECT THE PARSER BUTTON ---
         btn_parse = jp.Button(text="PARSE", a=card2, 
                               classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
@@ -426,6 +437,19 @@ def app():
             
             summary_header.on('click', toggle_summary)
             # ========================================================
+            # UNLOCK STEP 3
+            # ========================================================
+            card3.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 transition-all duration-500 mt-8"
+            card3.delete_components()
+            jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            
+            jp.Div(text=f"Ready to generate meanings for {len(df)} templates.", a=card3, classes="text-green-600 font-medium mb-4")
+            
+            # Placeholder Button for the next step
+            btn_gen_meaning = jp.Button(text="GENERATE", a=card3, 
+                                        classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
+            # We will attach the event handler here later:
+            # btn_gen_meaning.on('click', run_meaning_generation)
             
         except Exception as e:
             print(f"[ERROR] Parsing failed: {e}")
