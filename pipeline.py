@@ -2,6 +2,7 @@ import justpy as jp
 import os
 import sys
 import base64
+import pandas as pd
 
 # 1. SETUP: Connect to 'code' folder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
@@ -121,6 +122,12 @@ def app():
     card2 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none")
     jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold italic mb-2 text-slate-800")
     jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
+    # =========================================================
+    # STEP 3: MEANING GENERATION (New Placeholder)
+    # =========================================================
+    card3 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8")
+    jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
+    jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
 
 
     # =========================================================
@@ -314,11 +321,12 @@ def app():
         """
         status1.classes = "mt-4 text-sm font-mono text-green-800 bg-green-50 p-4 rounded border border-green-200 shadow-sm"
         # --- NEW: Output File (Blue Italic outside box) ---
-        jp.Div(
-            text=f"(Output File: {os.path.basename(out)})",
+        if not hasattr(card1, "output_label"):
+            card1.output_label = jp.Div(
             a=card1,
             classes="text-xs text-blue-600 italic mt-2 mb-4"
-        )
+            )
+        card1.output_label.text = f"(Output File: {os.path.basename(out)})"
             
         # Unlock Step 2
         card2.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 transition-all duration-500"
@@ -369,8 +377,55 @@ def app():
             </div>
             """
             
-            # --- NEW: Output File (Blue Italic outside box) ---
+            # ---Output File (Blue Italic outside box) ---
             jp.Div(text=f"(Output File: {os.path.basename(excel_path)})", a=card2, classes="text-xs text-blue-600 italic mb-4")
+            # ========================================================
+            # NEW: COLLAPSIBLE TEMPLATE SUMMARY (SHEET 2 DISPLAY)
+            # ========================================================
+            # 1. Read Sheet 2 from the Excel file we just created
+            df = pd.read_excel(excel_path, sheet_name='Template Summary')
+            # 2. Wrapper Container
+            summary_wrap = jp.Div(a=card2, classes="border rounded shadow-sm bg-white mt-4 overflow-hidden")
+            # 3. Header (Click to Toggle)
+            summary_header = jp.Div(a=summary_wrap, classes="p-3 bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100 transition select-none")
+            jp.Span(text=f"📋 View Templates Generated ({len(df)})", a=summary_header, classes="font-bold text-slate-700 text-sm")
+            toggle_icon = jp.Span(text="▼", a=summary_header, classes="text-xs text-gray-500")
+            # 4. Content (Hidden Table)
+            # max-h-96 gives it a scrollbar if the list is huge
+            summary_content = jp.Div(a=summary_wrap, classes="hidden overflow-y-auto max-h-96 border-t")
+            # 5. Build the Table
+            table = jp.Table(a=summary_content, classes="w-full text-left text-xs text-gray-600")
+            
+            # Table Header
+            thead = jp.Thead(a=table, classes="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0")
+            tr_head = jp.Tr(a=thead)
+            jp.Th(text="ID", a=tr_head, classes="px-4 py-2 w-16 bg-gray-100")
+            jp.Th(text="Count", a=tr_head, classes="px-4 py-2 w-24 text-center bg-gray-100")
+            jp.Th(text="Template Pattern", a=tr_head, classes="px-4 py-2 bg-gray-100")
+            
+            # Table Body
+            tbody = jp.Tbody(a=table, classes="divide-y divide-gray-100")
+            
+            for index, row in df.iterrows():
+                tr = jp.Tr(a=tbody, classes="hover:bg-blue-50 transition-colors")
+                # ID Column
+                jp.Td(text=row['Template ID'], a=tr, classes="px-4 py-2 font-mono text-blue-600 align-top")
+                # Count Column
+                jp.Td(text=row['Occurrences'], a=tr, classes="px-4 py-2 text-center font-bold text-slate-700 align-top")
+                # Template Column (break-all ensures long regex doesn't break layout)
+                jp.Td(text=row['Template Pattern'], a=tr, classes="px-4 py-2 font-mono break-all align-top")
+
+            # 6. Toggle Logic
+            def toggle_summary(self, msg):
+                if "hidden" in summary_content.classes:
+                    summary_content.classes = summary_content.classes.replace("hidden", "")
+                    toggle_icon.text = "▲"
+                else:
+                    summary_content.classes = f"{summary_content.classes} hidden"
+                    toggle_icon.text = "▼"
+            
+            summary_header.on('click', toggle_summary)
+            # ========================================================
             
         except Exception as e:
             print(f"[ERROR] Parsing failed: {e}")
