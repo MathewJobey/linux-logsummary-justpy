@@ -10,12 +10,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 # Import your tools
 from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
+from meaning_generator import generate_meanings_for_file
 
 # 2. STATE MANAGEMENT
 class PipelineState:
     def __init__(self):
         self.cleaned_file_path = None
         self.uploaded_file = None
+        self.meaning_file_path = None
         self.custom_blacklist = set()
         self.active_blacklist=[]
 
@@ -357,7 +359,7 @@ def app():
     btn_add_blacklist.on('click', add_to_blacklist)
     
     # ------------------------------------------------------------------
-    # 3. NEW: RUN PARSER LOGIC
+    # 3. RUN PARSER LOGIC
     # ------------------------------------------------------------------
     async def run_parser(self, msg):
         # 1. Update UI to show "Processing"
@@ -448,13 +450,110 @@ def app():
             # Placeholder Button for the next step
             btn_gen_meaning = jp.Button(text="GENERATE", a=card3, 
                                         classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
-            # We will attach the event handler here later:
-            # btn_gen_meaning.on('click', run_meaning_generation)
+            # CONNECT THE NEW HANDLER
+            btn_gen_meaning.on('click', run_meaning_generation)
             
         except Exception as e:
             print(f"[ERROR] Parsing failed: {e}")
             card2.delete_components()
             jp.Div(text=f"❌ Error: {str(e)}", a=card2, classes="text-red-600 font-bold")
+    
+    # ------------------------------------------------------------------
+    # 4. NEW: MEANING GENERATION LOGIC
+    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 4. NEW: MEANING GENERATION LOGIC
+    # ------------------------------------------------------------------
+    async def run_meaning_generation(self, msg):
+        # 1. Update UI: Show "Processing"
+        self.text = "⏳ Generating Meanings (Loading AI...)"
+        self.disabled = True
+        self.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded cursor-wait animate-pulse"
+        
+        # Get the parsed Excel path from the Parser step output
+        # (We assume the parser saved it to [filename]_analysis.xlsx)
+        # A robust way is to regenerate the path or store it in state during run_parser.
+        # Let's derive it from cleaned_file_path for now as it's reliable.
+        cleaned_file = msg.page.state.cleaned_file_path
+        base_name, _ = os.path.splitext(cleaned_file)
+        parsed_excel_path = f"{base_name}_analysis.xlsx"
+        
+        if not os.path.exists(parsed_excel_path):
+            print(f"[ERROR] Parsed file not found: {parsed_excel_path}")
+            self.text = "❌ Error: Input file missing"
+            return
+
+        try:
+            # 2. RUN THE GENERATOR
+            # This handles model loading, generation, and saving internally
+            meaning_excel_path, count = generate_meanings_for_file(parsed_excel_path)
+            
+            msg.page.state.meaning_file_path = meaning_excel_path
+            
+            # 3. UPDATE UI: Success
+            card3.delete_components()
+            jp.Div(text="Step 3: Meaning Generation", a=card3, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            
+            # Success Box
+            meaning_status = jp.Div(a=card3, classes="mt-4 text-sm font-mono text-green-800 bg-green-50 p-4 rounded border border-green-200 shadow-sm mb-2")
+            meaning_status.inner_html = f"""
+            <div class="font-bold text-lg mb-2">✅ Meanings Generated</div>
+            <div class="ml-4">
+                • <b>Templates Processed:</b> {count}<br>
+                • <b>Model:</b> Microsoft Phi-3 Mini
+            </div>
+            """
+            
+            # Output File Name
+            jp.Div(text=f"(Output File: {os.path.basename(meaning_excel_path)})", a=card3, classes="text-xs text-blue-600 italic mb-4")
+
+            # 4. COLLAPSIBLE TABLE (With Meanings)
+            df = pd.read_excel(meaning_excel_path, sheet_name='Template Summary')
+            # Sort by ID
+            df = df.sort_values(by="Template ID")
+            
+            summary_wrap = jp.Div(a=card3, classes="border rounded shadow-sm bg-white mt-4 overflow-hidden")
+            
+            summary_header = jp.Div(a=summary_wrap, classes="p-3 bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100 transition select-none")
+            jp.Span(text=f"🧠 View AI Interpretations ({len(df)})", a=summary_header, classes="font-bold text-slate-700 text-sm")
+            toggle_icon = jp.Span(text="▼", a=summary_header, classes="text-xs text-gray-500")
+            
+            summary_content = jp.Div(a=summary_wrap, classes="hidden overflow-y-auto max-h-96 border-t")
+            
+            table = jp.Table(a=summary_content, classes="w-full text-left text-xs text-gray-600")
+            thead = jp.Thead(a=table, classes="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0")
+            tr_head = jp.Tr(a=thead)
+            jp.Th(text="ID", a=tr_head, classes="px-4 py-2 w-16 bg-gray-100")
+            jp.Th(text="Template Pattern", a=tr_head, classes="px-4 py-2 w-1/3 bg-gray-100")
+            jp.Th(text="AI Meaning", a=tr_head, classes="px-4 py-2 bg-gray-100") # New Column
+            
+            tbody = jp.Tbody(a=table, classes="divide-y divide-gray-100")
+            
+            for index, row in df.iterrows():
+                tr = jp.Tr(a=tbody, classes="hover:bg-blue-50 transition-colors")
+                jp.Td(text=row['Template ID'], a=tr, classes="px-4 py-2 font-mono text-blue-600 align-top")
+                jp.Td(text=row['Template Pattern'], a=tr, classes="px-4 py-2 font-mono break-all align-top text-gray-500")
+                # Highlight the meaning
+                jp.Td(text=row['Event Meaning'], a=tr, classes="px-4 py-2 font-medium text-slate-800 align-top")
+
+            # Toggle Logic
+            def toggle_meaning_summary(self, msg):
+                if "hidden" in summary_content.classes:
+                    summary_content.classes = summary_content.classes.replace("hidden", "")
+                    toggle_icon.text = "▲"
+                else:
+                    summary_content.classes = f"{summary_content.classes} hidden"
+                    toggle_icon.text = "▼"
+            
+            summary_header.on('click', toggle_meaning_summary)
+
+        except Exception as e:
+            print(f"[ERROR] Meaning Generation failed: {e}")
+            self.text = "RETRY GENERATION"
+            self.disabled = False
+            self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
+            jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")
+            
     return wp
 
 jp.justpy(app, port=8000)

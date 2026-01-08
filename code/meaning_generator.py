@@ -34,7 +34,7 @@ def load_model():
         model = AutoModelForCausalLM.from_pretrained(
             MODEL_ID, 
             device_map=device, 
-            torch_dtype="auto", 
+            dtype="auto", 
             trust_remote_code=False,
             # This ensures we use the local cache if available
             local_files_only=False 
