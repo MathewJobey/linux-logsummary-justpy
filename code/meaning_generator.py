@@ -90,7 +90,7 @@ Your goal is to turn a technical log pattern into a natural English sentence str
 - <FD>: File descriptor number used by a process (e.g., 3, 5, 12).
 - <ERRNO>: Operating system error number indicating failure (e.g., 98, 13).
 
-### SERVICE KNOWLEDGE BASE (Translate these terms)
+### COMMON SERVICE KNOWLEDGE BASE (Translate these terms)
 - sshd: Secure Shell service (handles secure remote logins)
 - ftpd: File Transfer Protocol service (handles file uploads/downloads)
 - telnetd: Telnet service (handles unencrypted remote logins)
@@ -107,7 +107,6 @@ Your goal is to turn a technical log pattern into a natural English sentence str
 ### CORE TASK
 Create a sentence that describes the event while preserving ALL variable placeholders as **fixed data slots**. 
 Do not interpret the variables (e.g., do not change "<STATE>" to "initiated" or "closed"). Treat them as proper nouns that must appear in the final output.
-**Translate technical process names** (like `su`, `sshd`) into their full English descriptions using the **Service Knowledge Base** provided above when required.
 
 ### UNIVERSAL RULES
 1. **Preservation:** Every placeholder inside < > (e.g., <TIMESTAMP>, <PID>, <STATE>) MUST appear in the output exactly as written.
