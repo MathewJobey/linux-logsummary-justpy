@@ -196,7 +196,7 @@ def app():
                     # --- ADD THIS: RESET STEP 3 ---
                     card3.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
                     card3.delete_components()
-                    jp.Div(text="Step 3: Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
+                    jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
                 else:
                     print("[ERROR] Empty file content received.")
@@ -344,7 +344,7 @@ def app():
         # --- ADD THIS: RESET STEP 3 (Re-lock it if we re-cleaned) ---
         card3.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
         card3.delete_components()
-        jp.Div(text="Step 3: Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
+        jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
         jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
         
         # --- CONNECT THE PARSER BUTTON ---
@@ -492,7 +492,7 @@ def app():
             
             # 3. UPDATE UI: Success
             card3.delete_components()
-            jp.Div(text="Step 3: Meaning Generation", a=card3, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
             # Success Box
             meaning_status = jp.Div(a=card3, classes="mt-4 text-sm font-mono text-green-800 bg-green-50 p-4 rounded border border-green-200 shadow-sm mb-2")
@@ -548,7 +548,7 @@ def app():
             summary_header.on('click', toggle_meaning_summary)
 
         except Exception as e:
-            print(f"[ERROR] Meaning Generation failed: {e}")
+            print(f"[ERROR] Template Meaning Generation failed: {e}")
             self.text = "RETRY GENERATION"
             self.disabled = False
             self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"

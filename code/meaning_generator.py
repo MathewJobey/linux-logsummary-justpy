@@ -8,6 +8,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 # ==========================================
 MODEL_ID = "microsoft/Phi-3-mini-4k-instruct"
 # Global cache for the model so we don't reload it every time
+LOCAL_MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+
+# Global cache
 _LOADED_PIPELINE = None
 
 # ==========================================
@@ -15,43 +18,55 @@ _LOADED_PIPELINE = None
 # ==========================================
 def load_model():
     """
-    Loads the Phi-3 model. On the first run, it downloads the model locally.
-    On subsequent runs, it loads from the local cache (offline).
+    Loads the Phi-3 model. Downloads to the local 'models' folder.
     """
     global _LOADED_PIPELINE
     if _LOADED_PIPELINE is not None:
         return _LOADED_PIPELINE
-    print(f"\n[AI] Loading Model: {MODEL_ID}...")
-    print("[AI] NOTE: First run requires internet to download weights (~8GB).")
-    print("[AI] Once downloaded, it runs 100% locally/offline.")
-    
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        # Load Model (Optimized for hardware)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[AI] Hardware detected: {device.upper()}")
+    print(f"\n[AI] Initializing AI Engine...")
+    print(f"[AI] Model storage path: {os.path.abspath(LOCAL_MODEL_PATH)}")
+    # Check for GPU
+    if torch.cuda.is_available():
+        device = "cuda"
+        print(f"[AI] ✅ Hardware detected: GPU ({torch.cuda.get_device_name(0)})")
+    else:
+        device = "cpu"
+        print("-" * 60)
+        print("[AI] ⚠️  WARNING: Hardware detected: CPU")
+        print("      This will be very slow (approx 10-30 seconds per line).")
+        print("      If you have an NVIDIA GPU, you must install the CUDA version of PyTorch.")
+        print("      Run: pip install torch --index-url https://download.pytorch.org/whl/cu118")
+        print("-" * 60)
 
+    try:
+        print(f"[AI] Loading Model weights ({MODEL_ID})...")
+        
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_ID, 
+            cache_dir=LOCAL_MODEL_PATH
+        )
+        
         model = AutoModelForCausalLM.from_pretrained(
             MODEL_ID, 
             device_map=device, 
             dtype="auto", 
             trust_remote_code=False,
-            # This ensures we use the local cache if available
-            local_files_only=False 
+            cache_dir=LOCAL_MODEL_PATH 
         )
+        
         _LOADED_PIPELINE = pipeline(
             "text-generation",
             model=model,
             tokenizer=tokenizer,
-            max_new_tokens=120,
+            max_new_tokens=150,
             return_full_text=False,
-            do_sample=False
+            do_sample=False 
         )
         print("[AI] SUCCESS: Model loaded and ready!")
         return _LOADED_PIPELINE
         
     except Exception as e:
-        print(f"[AI] Error loading model: {e}")
+        print(f"[AI] ❌ Error loading model: {e}")
         return None
 
 # ==========================================
@@ -87,11 +102,11 @@ Do not interpret the variables (e.g., do not change "<STATE>" to "initiated" or 
 3. **Completeness:** Never summarize. If a template has 5 variables, your sentence must contain 5 variables.
 
 ### EXAMPLES
-Input: <TIMESTAMP> <HOSTNAME> su: session <STATE> for user <USERNAME>
-Output: At <TIMESTAMP>, on the server <HOSTNAME>, a 'su' session for user <USERNAME> was recorded with a status of <STATE>.
+Input: <TIMESTAMP> <HOSTNAME> su(pam_unix)[<PID>]: session <STATE> for user <USERNAME>
+Output: 
 
-Input: <TIMESTAMP> <HOSTNAME> sshd[<PID>]: Failed password for <USERNAME> from <RHOST>
-Output: At <TIMESTAMP>, the server <HOSTNAME> recorded a failed password attempt for user <USERNAME> coming from remote host <RHOST>, handled by process ID <PID>.
+Input: <TIMESTAMP> <HOSTNAME> ftpd[<PID>]: connection from <RHOST>
+Output: 
 """
     
     # Phi-3 Chat Format Tags
@@ -113,47 +128,51 @@ def generate_meanings_for_file(input_excel_path):
     if not pipe:
         raise RuntimeError("Model failed to load.")
     
-    # 2. Read Excel
     print(f"[AI] Reading templates from: {os.path.basename(input_excel_path)}")
     df_summary = pd.read_excel(input_excel_path, sheet_name="Template Summary")
     df_logs = pd.read_excel(input_excel_path, sheet_name="Log Analysis")
     
-    #3. Build Prompts
-    #sorting by temp id to keep order
+    # Sort for cleaner output
     df_summary = df_summary.sort_values(by="Template ID")
     templates = df_summary['Template Pattern'].tolist()
     template_ids = df_summary['Template ID'].tolist()
     
-    prompts = [build_prompt(t) for t in templates]
-    print(f"[AI] Generating meanings for {len(prompts)} templates...")
-    print("-" * 60)
+    print(f"[AI] Processing {len(templates)} templates...")
+    print("-" * 75)
     print(f"{'ID':<5} | {'TEMPLATE (Truncated)':<40} | {'GENERATED MEANING'}")
-    print("-" * 60)
+    print("-" * 75)
     
     explanations = []
-    
-    # 4. Run Inference (Iterate one by one to print status)
-    # Using the pipeline in batch mode is faster, but loop allows live printing
-    results = pipe(prompts, batch_size=4) # Batch size speeds up GPU usage
-    
-    for i, output in enumerate(results):
-        raw_result = output[0]['generated_text'].strip()
+    # --- CHANGED: LOOP ONE BY ONE INSTEAD OF BATCHING ---
+    # This ensures "live" updates and prevents the feeling of "hanging" on CPU
+    for i, template in enumerate(templates):
+        prompt = build_prompt(template)
         
-        # Clean Output
-        clean_result = raw_result.split('\n')[0]
-        clean_result = clean_result.replace('Output:', '').replace('Result:', '').strip()
-        clean_result = clean_result.replace('"', '').replace("'", "")
-        
-        if clean_result and not clean_result.endswith('.'):
-            clean_result += "."
+        try:
+            # Generate
+            output = pipe(prompt)
             
-        explanations.append(clean_result)
-        
-        # Live Terminal Output
-        t_trunc = (templates[i][:37] + '...') if len(templates[i]) > 37 else templates[i]
-        print(f"{template_ids[i]:<5} | {t_trunc:<40} | {clean_result}")
+            raw_result = output[0]['generated_text'].strip()
+            
+            # Clean Output
+            clean_result = raw_result.split('\n')[0]
+            clean_result = clean_result.replace('Output:', '').replace('Result:', '').strip()
+            clean_result = clean_result.replace('"', '').replace("'", "")
+            
+            if clean_result and not clean_result.endswith('.'):
+                clean_result += "."
+            
+            explanations.append(clean_result)
+            
+            # Print Live Update
+            t_trunc = (template[:37] + '...') if len(template) > 37 else template
+            print(f"{template_ids[i]:<5} | {t_trunc:<40} | {clean_result}")
+            
+        except Exception as e:
+            print(f"{template_ids[i]:<5} | ERROR GENERATING MEANING | {e}")
+            explanations.append("Error generating meaning.")
 
-    # 5. Save Output
+    # Save Output
     df_summary['Event Meaning'] = explanations
     base_dir = os.path.dirname(input_excel_path)
     base_name = os.path.basename(input_excel_path)
@@ -164,7 +183,7 @@ def generate_meanings_for_file(input_excel_path):
         df_logs.to_excel(writer, sheet_name='Log Analysis', index=False)
         df_summary.to_excel(writer, sheet_name='Template Summary', index=False)
         
-    print("-" * 60)
+    print("-" * 75)
     print(f"[AI] Generation Complete. Saved to: {os.path.basename(save_path)}")
     
     return save_path, len(df_summary)
