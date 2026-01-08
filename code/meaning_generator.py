@@ -90,6 +90,20 @@ Your goal is to turn a technical log pattern into a natural English sentence str
 - <FD>: File descriptor number used by a process (e.g., 3, 5, 12).
 - <ERRNO>: Operating system error number indicating failure (e.g., 98, 13).
 
+### SERVICE KNOWLEDGE BASE (Translate these terms)
+- sshd: Secure Shell service (handles secure remote logins)
+- ftpd: File Transfer Protocol service (handles file uploads/downloads)
+- telnetd: Telnet service (handles unencrypted remote logins)
+- su: Substitute User utility (handles switching user accounts)
+- login: System Login process (handles local console sign-ins)
+- unix_chkpwd: Password Verification Helper (verifies user passwords)
+- passwd: Password Management tool (handles password changes)
+- klogind: Kerberos Login service (handles network authentication)
+- xinetd: Extended Internet Services daemon (manages network connections for other services)
+- snmpd: Network Management service (reports system status for monitoring)
+- gdm / gdm-binary: GNOME Display Manager (handles the graphical login screen)
+- PAM-rootok: Root Permission Checker (verifies superuser access rights)
+
 ### CORE TASK
 Create a sentence that describes the event while preserving ALL variable placeholders as **fixed data slots**. 
 Do not interpret the variables (e.g., do not change "<STATE>" to "initiated" or "closed"). Treat them as proper nouns that must appear in the final output.
@@ -103,10 +117,13 @@ Do not interpret the variables (e.g., do not change "<STATE>" to "initiated" or 
 
 ### EXAMPLES
 Input: <TIMESTAMP> <HOSTNAME> su(pam_unix)[<PID>]: session <STATE> for user <USERNAME>
-Output: 
+Output: At <TIMESTAMP>, on server <HOSTNAME>, the Substitute User utility (su) running as process <PID> reported that a session entered the <STATE> state for user <USERNAME>.
 
 Input: <TIMESTAMP> <HOSTNAME> ftpd[<PID>]: connection from <RHOST>
-Output: 
+Output: At <TIMESTAMP>, the File Transfer service (ftpd) running as process <PID> on <HOSTNAME> received a connection request from remote host <RHOST>.
+
+Input: <TIMESTAMP> <HOSTNAME> unix_chkpwd[<PID>]: check pass; user <USERNAME>
+Output: At <TIMESTAMP>, the Password Verification Helper (unix_chkpwd) running as process <PID> on <HOSTNAME> reported a password check error regarding user <USERNAME>.
 """
     
     # Phi-3 Chat Format Tags
