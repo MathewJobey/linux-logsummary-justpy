@@ -209,7 +209,58 @@ def generate_meanings_for_file(input_excel_path):
         print(f"{'ID':<5} | {'TEMPLATE (Truncated)':<40} | {'GENERATED MEANING'}")
         print("-" * 75)
         
+        #BATCH PROCESSING [BETTER TIME EFFECIENCY]
+        # We collect all prompts and their corresponding original indices first
+        batch_prompts = []
+        batch_ids = []
+        batch_indices = [] # Keeps track of where to save the result in 'final_meanings'
+
         for idx in new_templates_indices:
+            template = templates[idx]
+            # Build the prompt immediately
+            batch_prompts.append(build_prompt(template))
+            # Store metadata so we can map the result back later
+            batch_ids.append(template_ids[idx])
+            batch_indices.append(idx)
+            
+        print(f"[AI] Batching {len(batch_prompts)} prompts for GPU inference...")
+        # [NEW] Run Batch Inference
+        # batch_size=8 is a good starting point for 4GB-8GB VRAM. 
+        # Increase to 16 or 32 if you have a powerful GPU (3090/4090).
+        results = pipe(batch_prompts, batch_size=8)
+
+        # Iterate through the results and the metadata lists simultaneously
+        for i, output in enumerate(results):
+            # Retrieve metadata for this specific result
+            original_idx = batch_indices[i]
+            t_id = batch_ids[i]
+            template = templates[original_idx]
+
+            try:
+                # Extract text
+                raw_result = output[0]['generated_text'].strip()
+                
+                # Clean Output
+                clean_result = raw_result.split('\n')[0]
+                clean_result = clean_result.replace('Output:', '').replace('Result:', '').strip()
+                clean_result = clean_result.replace('"', '').replace("'", "")
+                if clean_result and not clean_result.endswith('.'):
+                    clean_result += "."
+                
+                # Store result in the main list
+                final_meanings[original_idx] = clean_result
+                cache[template] = clean_result # Update cache
+                
+                # Print Live Update
+                t_trunc = (template[:37] + '...') if len(template) > 37 else template
+                print(f"{t_id:<5} | {t_trunc:<40} | {clean_result}")
+
+            except Exception as e:
+                print(f"{t_id:<5} | ERROR | {e}")
+                final_meanings[original_idx] = "Error generating meaning."
+        
+        #SEQUENTIAL PROCESSING[BETTER FOR LOW VRAM/CPU ONLY]
+        """for idx in new_templates_indices:
             template = templates[idx]
             t_id = template_ids[idx]
             
@@ -236,13 +287,13 @@ def generate_meanings_for_file(input_excel_path):
                 
             except Exception as e:
                 print(f"{t_id:<5} | ERROR | {e}")
-                final_meanings[idx] = "Error generating meaning."
+                final_meanings[idx] = "Error generating meaning." """
         
         # --- 4. SAVE CACHE TO DISK ---
         save_template_cache(cache)
     else:
         print("[AI] All templates found in cache. Skipping generation!")
-    explanations = []
+        
     # --- 5. SAVE EXCEL ---
     df_summary['Event Meaning'] = final_meanings
     base_dir = os.path.dirname(input_excel_path)
