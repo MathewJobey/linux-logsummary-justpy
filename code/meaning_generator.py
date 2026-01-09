@@ -169,11 +169,6 @@ def generate_meanings_for_file(input_excel_path):
     if not os.path.exists(input_excel_path):
         raise FileNotFoundError(f"Input file not found: {input_excel_path}")
     
-    #1. Load Model
-    pipe=load_model()
-    if not pipe:
-        raise RuntimeError("Model failed to load.")
-    
     print(f"[AI] Reading templates from: {os.path.basename(input_excel_path)}")
     df_summary = pd.read_excel(input_excel_path, sheet_name="Template Summary")
     df_logs = pd.read_excel(input_excel_path, sheet_name="Log Analysis")
@@ -183,43 +178,73 @@ def generate_meanings_for_file(input_excel_path):
     templates = df_summary['Template Pattern'].tolist()
     template_ids = df_summary['Template ID'].tolist()
     
-    print(f"[AI] Processing {len(templates)} templates...")
-    print("-" * 75)
-    print(f"{'ID':<5} | {'TEMPLATE (Truncated)':<40} | {'GENERATED MEANING'}")
-    print("-" * 75)
+    # --- 1. LOAD CACHE ---
+    cache = load_template_cache()
+    print(f"[CACHE] Loaded {len(cache)} existing meanings.")
     
-    explanations = []
-    # --- CHANGED: LOOP ONE BY ONE INSTEAD OF BATCHING ---
-    # This ensures "live" updates and prevents the feeling of "hanging" on CPU
-    for i, template in enumerate(templates):
-        prompt = build_prompt(template)
+    # --- 2. IDENTIFY NEW VS. CACHED ---
+    new_templates_indices = [] # Indices of templates that need generation
+    final_meanings = [""] * len(templates) # Placeholder list
+    
+    for i, t in enumerate(templates):
+        if t in cache:
+            # HIT: Retrieve from cache
+            final_meanings[i] = cache[t]
+        else:
+            # MISS: Mark for generation
+            new_templates_indices.append(i)
+            
+    print(f"[AI] Total Templates: {len(templates)}")
+    print(f"[AI] Cached: {len(templates) - len(new_templates_indices)}")
+    print(f"[AI] New to Generate: {len(new_templates_indices)}")
+    
+    # --- 3. GENERATE ONLY IF NEEDED ---
+    if new_templates_indices:
+        # Only load the heavy model if we actually have work to do
+        pipe = load_model()
+        if not pipe:
+            raise RuntimeError("Model failed to load.")    
         
-        try:
-            # Generate
-            output = pipe(prompt)
+        print("-" * 75)
+        print(f"{'ID':<5} | {'TEMPLATE (Truncated)':<40} | {'GENERATED MEANING'}")
+        print("-" * 75)
+        
+        for idx in new_templates_indices:
+            template = templates[idx]
+            t_id = template_ids[idx]
             
-            raw_result = output[0]['generated_text'].strip()
-            
-            # Clean Output
-            clean_result = raw_result.split('\n')[0]
-            clean_result = clean_result.replace('Output:', '').replace('Result:', '').strip()
-            clean_result = clean_result.replace('"', '').replace("'", "")
-            
-            if clean_result and not clean_result.endswith('.'):
-                clean_result += "."
-            
-            explanations.append(clean_result)
-            
-            # Print Live Update
-            t_trunc = (template[:37] + '...') if len(template) > 37 else template
-            print(f"{template_ids[i]:<5} | {t_trunc:<40} | {clean_result}")
-            
-        except Exception as e:
-            print(f"{template_ids[i]:<5} | ERROR GENERATING MEANING | {e}")
-            explanations.append("Error generating meaning.")
-
-    # Save Output
-    df_summary['Event Meaning'] = explanations
+            prompt = build_prompt(template)
+            try:
+                # Generate
+                output = pipe(prompt)
+                raw_result = output[0]['generated_text'].strip()
+                
+                # Clean Output
+                clean_result = raw_result.split('\n')[0]
+                clean_result = clean_result.replace('Output:', '').replace('Result:', '').strip()
+                clean_result = clean_result.replace('"', '').replace("'", "")
+                if clean_result and not clean_result.endswith('.'):
+                    clean_result += "."
+                
+                # Store result
+                final_meanings[idx] = clean_result
+                cache[template] = clean_result # Update in-memory cache
+                
+                # Print Live Update
+                t_trunc = (template[:37] + '...') if len(template) > 37 else template
+                print(f"{t_id:<5} | {t_trunc:<40} | {clean_result}")
+                
+            except Exception as e:
+                print(f"{t_id:<5} | ERROR | {e}")
+                final_meanings[idx] = "Error generating meaning."
+        
+        # --- 4. SAVE CACHE TO DISK ---
+        save_template_cache(cache)
+    else:
+        print("[AI] All templates found in cache. Skipping generation!")
+    explanations = []
+    # --- 5. SAVE EXCEL ---
+    df_summary['Event Meaning'] = final_meanings
     base_dir = os.path.dirname(input_excel_path)
     base_name = os.path.basename(input_excel_path)
     output_filename = base_name.replace("_analysis.xlsx", "_meaning.xlsx")
@@ -230,109 +255,5 @@ def generate_meanings_for_file(input_excel_path):
         df_summary.to_excel(writer, sheet_name='Template Summary', index=False)
         
     print("-" * 75)
-    print(f"[AI] Generation Complete. Saved to: {os.path.basename(save_path)}")
-    
+    print(f"[AI] Process Complete. Saved to: {os.path.basename(save_path)}")
     return save_path, len(df_summary)
-"""# ==========================================
-# 4. MAIN EXECUTION LOGIC
-# ==========================================
-def main():
-    # Load the AI model
-    pipe = load_model()
-
-    # Locate Data
-    print(f"\nLooking for files in: {os.path.abspath(DATA_FOLDER)}")
-    
-    # Ensure data folder exists
-    current_data_folder = DATA_FOLDER
-    if not os.path.exists(current_data_folder):
-        print(f"WARNING: Data folder '{DATA_FOLDER}' not found.")
-        current_data_folder = "."  # Fallback to current directory
-        print(f"Searching in current directory: {os.path.abspath(current_data_folder)}")
-
-    available_files = [f for f in os.listdir(current_data_folder) if f.endswith('.xlsx')]
-    target_filename = None
-
-    # File Selection Logic
-    if not available_files:
-        print("WARNING: No Excel files found automatically.")
-        user_input = input("Please paste the full path to your file: ").strip().replace('"', '')
-        if os.path.exists(user_input):
-            target_filename = user_input
-    else:
-        print("\nAvailable Files:")
-        for i, f in enumerate(available_files):
-            print(f" [{i+1}] {f}")
-        
-        selection = input("\nEnter the file number (or filename): ").strip()
-
-        # Handle number selection
-        if selection.isdigit() and 1 <= int(selection) <= len(available_files):
-            target_filename = os.path.join(current_data_folder, available_files[int(selection)-1])
-        # Handle filename input
-        elif selection in available_files:
-            target_filename = os.path.join(current_data_folder, selection)
-        else:
-            target_filename = selection.replace('"', '')
-
-    # Processing Loop
-    if not target_filename or not os.path.exists(target_filename):
-        print(f"ERROR: File not found: {target_filename}")
-        return
-
-    print(f"\nReading {target_filename}...")
-    try:
-        df_summary = pd.read_excel(target_filename, sheet_name="Template Summary")
-        df_logs = pd.read_excel(target_filename, sheet_name="Log Analysis")
-        
-        templates = df_summary['Template Pattern'].tolist()
-        prompts = [build_prompt(t) for t in templates]
-        
-        print(f"Processing {len(prompts)} templates...")
-        explanations = []
-
-        # Run Inference
-        for output in tqdm(pipe(prompts, max_new_tokens=120, return_full_text=False, do_sample=False), total=len(prompts)):
-            
-            raw_result = output[0]['generated_text'].strip()
-            
-            # Clean Output
-            clean_result = raw_result.split('\n')[0] # First line only
-            clean_result = clean_result.replace('Output:', '').replace('Result:', '').strip()
-            clean_result = clean_result.replace('"', '').replace("'", "")
-            
-            if clean_result and not clean_result.endswith('.'):
-                clean_result += "."
-                
-            explanations.append(clean_result)
-
-        # Save Output
-        df_summary['Event Meaning'] = explanations
-        
-        # Ensure output folder exists
-        os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-        
-        base_name = os.path.basename(target_filename)
-        
-        # --- CHANGED LINE BELOW ---
-        # Renames file to: [OriginalName]_meaning.xlsx
-        save_path = os.path.join(OUTPUT_FOLDER, base_name.replace(".xlsx", "_meaning.xlsx"))
-        
-        with pd.ExcelWriter(save_path, engine='openpyxl') as writer:
-            df_logs.to_excel(writer, sheet_name='Log Analysis', index=False)
-            df_summary.to_excel(writer, sheet_name='Template Summary', index=False)
-            
-        print("-" * 60)
-        print("SAMPLE RESULTS:")
-        for i in range(min(3, len(explanations))):
-            print(f"TEMPLATE: {templates[i][:50]}...")
-            print(f"MEANING:  {explanations[i]}")
-        
-        print("-" * 60)
-        print(f"DONE! Saved to: {save_path}")
-        
-    except Exception as e:
-        print(f"Error processing file: {e}")
-        
-if __name__ == "__main__":
-    main()"""
