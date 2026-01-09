@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 import pandas as pd
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
@@ -10,8 +11,36 @@ MODEL_ID = "microsoft/Phi-3-mini-4k-instruct"
 # Global cache for the model so we don't reload it every time
 LOCAL_MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
 
+# <--- NEW: CACHE CONFIGURATION ---
+CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache")
+CACHE_FILE = os.path.join(CACHE_DIR, "template_meanings.json")
+
 # Global cache
 _LOADED_PIPELINE = None
+
+# ==========================================
+# 1.5 CACHE HELPER FUNCTIONS (NEW)
+# ==========================================
+def load_template_cache():
+    """Loads the dictionary of {template_pattern: meaning} from JSON."""
+    if not os.path.exists(CACHE_FILE):
+        return {}
+    try:
+        with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[CACHE] Warning: Could not read cache file ({e}). Starting fresh.")
+        return {}
+
+def save_template_cache(cache_data):
+    """Saves the updated dictionary to JSON."""
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True) # Ensure folder exists
+        with open(CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=4, ensure_ascii=False)
+        print(f"[CACHE] Updated cache with {len(cache_data)} templates.")
+    except Exception as e:
+        print(f"[CACHE] Error saving cache: {e}")
 
 # ==========================================
 # 2. MODEL LOADING
