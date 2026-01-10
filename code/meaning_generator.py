@@ -169,6 +169,7 @@ def generate_meanings_for_file(input_excel_path):
     if not os.path.exists(input_excel_path):
         raise FileNotFoundError(f"Input file not found: {input_excel_path}")
     
+    print("------ [GENERATING] ------")
     print(f"[AI] Reading templates from: {os.path.basename(input_excel_path)}")
     df_summary = pd.read_excel(input_excel_path, sheet_name="Template Summary")
     df_logs = pd.read_excel(input_excel_path, sheet_name="Log Analysis")
@@ -205,9 +206,9 @@ def generate_meanings_for_file(input_excel_path):
         if not pipe:
             raise RuntimeError("Model failed to load.")    
         
-        print("-" * 75)
-        print(f"{'ID':<5} | {'TEMPLATE (Truncated)':<40} | {'GENERATED MEANING'}")
-        print("-" * 75)
+        print("\n" + "=" * 60)
+        print(f"   BATCH GENERATION STARTED ({len(new_templates_indices)} New Templates)")
+        print("=" * 60 + "\n")
         
         #BATCH PROCESSING [BETTER TIME EFFECIENCY]
         # We collect all prompts and their corresponding original indices first
@@ -252,8 +253,9 @@ def generate_meanings_for_file(input_excel_path):
                 cache[template] = clean_result # Update cache
                 
                 # Print Live Update
-                t_trunc = (template[:37] + '...') if len(template) > 37 else template
-                print(f"{t_id:<5} | {t_trunc:<40} | {clean_result}")
+                print(f"[{t_id}] {template}")
+                print(f"Meaning: {clean_result}")
+                print("-" * 50)
 
             except Exception as e:
                 print(f"{t_id:<5} | ERROR | {e}")
@@ -307,4 +309,5 @@ def generate_meanings_for_file(input_excel_path):
         
     print("-" * 75)
     print(f"[AI] Process Complete. Saved to: {os.path.basename(save_path)}")
+    print(f"File Saved To:    {os.path.abspath(save_path)}\n")
     return save_path, len(df_summary)
