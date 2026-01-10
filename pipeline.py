@@ -4,7 +4,7 @@ import sys
 import base64
 import pandas as pd
 import asyncio
-
+import time
 
 # 1. SETUP: Connect to 'code' folder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
@@ -452,6 +452,11 @@ def app():
             # Placeholder Button for the next step
             btn_gen_meaning = jp.Button(text="GENERATE", a=card3, 
                                         classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
+            
+           # Updated style: Blue, Italic, Centered (matches your request)
+            timer_label = jp.Div(text="", a=card3, classes="mt-2 text-center text-xs text-blue-600 italic font-bold hidden")
+            btn_gen_meaning.timer_label = timer_label
+            
             # CONNECT THE NEW HANDLER
             btn_gen_meaning.on('click', run_meaning_generation)
             
@@ -461,14 +466,14 @@ def app():
             jp.Div(text=f"❌ Error: {str(e)}", a=card2, classes="text-red-600 font-bold")
     
     # ------------------------------------------------------------------
-    # 4. NEW: MEANING GENERATION LOGIC
+    # 4. NEW: MEANING GENERATION LOGIC WITH TIMER
     # ------------------------------------------------------------------
     async def run_meaning_generation(self, msg):
         # 1. IMMEDIATE UI UPDATE
         self.disabled = True
-        self.text = "" # Clear plain text to use inner_html
+        self.text = "" 
         
-        # Inject SVG Spinner + Text
+        # Spinner inside the button
         self.inner_html = """
         <div class="flex items-center justify-center">
             <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -479,22 +484,43 @@ def app():
         </div>
         """
         self.classes = "w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed"
-        # -----------------------
-               
-        # --- LOCK CARDS (Grey out Step 1 & 2) ---
+        
+        # --- TIMER SETUP ---
+        start_time = time.time()
+        self.is_generating = True
+        
+        # Helper to format time (e.g., "1m 30s")
+        def format_duration(seconds):
+            m, s = divmod(int(seconds), 60)
+            h, m = divmod(m, 60)
+            if h > 0: return f"{h}h {m}m {s}s"
+            if m > 0: return f"{m}m {s}s"
+            return f"{s}s"
+
+        # Background Task: Update the label below the button every second
+        async def timer_loop():
+            # Show the label
+            self.timer_label.classes = self.timer_label.classes.replace("hidden", "block")
+            
+            while getattr(self, 'is_generating', False):
+                elapsed = time.time() - start_time
+                # Updates the text every second
+                self.timer_label.text = f"Time Elapsed: {format_duration(elapsed)}"
+                await self.timer_label.update()
+                await asyncio.sleep(1)
+
+        timer_task = asyncio.create_task(timer_loop())
+
+        # --- LOCK CARDS ---
         card1_original = card1.classes
         card2_original = card2.classes
-        
-        # Apply grey-out styles
         card1.classes = f"{card1_original} opacity-50 pointer-events-none"
         if "opacity-100" in card2.classes:
             card2.classes = card2.classes.replace("opacity-100", "opacity-50 pointer-events-none")
         else:
             card2.classes += " opacity-50 pointer-events-none"
         
-        # 2. FORCE BROWSER RENDER
         await msg.page.update()
-        await asyncio.sleep(0.1) 
         
         # Get paths
         cleaned_file = msg.page.state.cleaned_file_path
@@ -502,6 +528,8 @@ def app():
         parsed_excel_path = f"{base_name}_analysis.xlsx"
         
         if not os.path.exists(parsed_excel_path):
+            self.is_generating = False # Stop timer
+            await timer_task
             print(f"[ERROR] Parsed file not found: {parsed_excel_path}")
             self.inner_html = ""
             self.text = "❌ Error: Input file missing"
@@ -511,24 +539,29 @@ def app():
             return
 
         try:
-            # 3. RUN THE GENERATOR (Non-blocking)
+            # 2. RUN GENERATOR
             meaning_excel_path, count = await asyncio.to_thread(generate_meanings_for_file, parsed_excel_path)
             
+            # --- CALCULATE FINAL TIME ---
+            end_time = time.time()
+            total_duration = format_duration(end_time - start_time)
+
             msg.page.state.meaning_file_path = meaning_excel_path
             
-            # --- UNLOCK UI: Restore Cards ---
+            # --- UNLOCK UI ---
             card1.classes = card1_original
             card2.classes = card2_original
             
-            # 4. UPDATE UI: Success
+            # 3. SUCCESS UPDATE
             card3.delete_components()
             jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
-            # Success Box
+            # Success Box (Now includes Time Taken)
             meaning_status = jp.Div(a=card3, classes="mt-4 text-sm font-mono text-green-800 bg-green-50 p-4 rounded border border-green-200 shadow-sm mb-2")
             meaning_status.inner_html = f"""
             <div class="font-bold text-lg mb-2">✅ Meanings Generated</div>
             <div class="ml-4">
+                • <b>Time Taken:</b> {total_duration}<br>
                 • <b>Templates Processed:</b> {count}<br>
                 • <b>Model:</b> Microsoft Phi-3 Mini
             </div>
@@ -537,7 +570,7 @@ def app():
             # Output File Name
             jp.Div(text=f"(Output File: {os.path.basename(meaning_excel_path)})", a=card3, classes="text-xs text-blue-600 italic mb-4")
 
-            # 5. COLLAPSIBLE TABLE
+            # 4. COLLAPSIBLE TABLE
             df = pd.read_excel(meaning_excel_path, sheet_name='Template Summary')
             df = df.sort_values(by="Template ID")
             
@@ -577,20 +610,24 @@ def app():
         except Exception as e:
             print(f"[ERROR] Meaning Generation failed: {e}")
             
-            # Unlock UI on error
             card1.classes = card1_original
             card2.classes = card2_original
             
-            self.inner_html = "" # Remove Spinner
+            self.inner_html = "" 
             self.text = "RETRY GENERATION"
             self.disabled = False
-            
-            # --- FIX ENDS HERE ---
-            # 2. On Error, we MUST restore pointer events so they can click 'Retry'
-            # (I changed this back to Red without pointer-events-none)
+            # Restore to red error state
             self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
             
-            jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")    
+            # Hide timer label on error
+            if hasattr(self, 'timer_label'):
+                self.timer_label.classes = self.timer_label.classes.replace("block", "hidden")
+                
+            jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")
+            
+        finally:
+            self.is_generating = False
+            await timer_task   
     return wp
 
 jp.justpy(app, port=8000)
