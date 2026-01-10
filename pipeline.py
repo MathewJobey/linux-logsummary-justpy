@@ -5,6 +5,7 @@ import base64
 import pandas as pd
 import asyncio
 
+
 # 1. SETUP: Connect to 'code' folder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 
@@ -402,7 +403,7 @@ def app():
             summary_wrap = jp.Div(a=card2, classes="border rounded shadow-sm bg-white mt-4 overflow-hidden")
             # 3. Header (Click to Toggle)
             summary_header = jp.Div(a=summary_wrap, classes="p-3 bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100 transition select-none")
-            jp.Span(text=f"📋 View Templates Generated ({len(df)})", a=summary_header, classes="font-bold text-slate-700 text-sm")
+            jp.Span(text=f"📋 View Templates Found ({len(df)})", a=summary_header, classes="font-bold text-slate-700 text-sm")
             toggle_icon = jp.Span(text="▼", a=summary_header, classes="text-xs text-gray-500")
             # 4. Content (Hidden Table)
             # max-h-96 gives it a scrollbar if the list is huge
@@ -462,64 +463,55 @@ def app():
     # ------------------------------------------------------------------
     # 4. NEW: MEANING GENERATION LOGIC
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # 4. NEW: MEANING GENERATION LOGIC
-    # ------------------------------------------------------------------
     async def run_meaning_generation(self, msg):
-        # 1. Update UI: Initial State
+        # 1. IMMEDIATE UI UPDATE
         self.disabled = True
-        # Removed 'animate-pulse' because we are doing our own text animation
-        self.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded cursor-wait"
+        self.text = "" # Clear plain text to use inner_html
         
-        # --- LOCK UI: Grey out Step 1 and Step 2 ---
-        # Save original classes to restore later
+        # Inject SVG Spinner + Text
+        self.inner_html = """
+        <div class="flex items-center justify-center">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            GENERATING...
+        </div>
+        """
+        self.classes = "w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed"
+        # -----------------------
+               
+        # --- LOCK CARDS (Grey out Step 1 & 2) ---
         card1_original = card1.classes
         card2_original = card2.classes
         
-        # Dim Card 1 (Step 1)
+        # Apply grey-out styles
         card1.classes = f"{card1_original} opacity-50 pointer-events-none"
+        if "opacity-100" in card2.classes:
+            card2.classes = card2.classes.replace("opacity-100", "opacity-50 pointer-events-none")
+        else:
+            card2.classes += " opacity-50 pointer-events-none"
         
-        # Dim Card 2 (Step 2) - Replace opacity-100 with opacity-50
-        card2.classes = card2_original.replace("opacity-100", "opacity-50 pointer-events-none")
-        
-        # Force UI update so user sees the grey-out immediately
+        # 2. FORCE BROWSER RENDER
         await msg.page.update()
+        await asyncio.sleep(0.1) 
         
-        # --- START TEXT ANIMATION ---
-        async def animate_button_text(btn):
-            try:
-                dots = 0
-                while True:
-                    btn.text = f"GENERATING{'.' * dots}"
-                    await btn.update()
-                    dots = (dots + 1) % 4  # Cycles: 0, 1, 2, 3
-                    await asyncio.sleep(0.4) # Adjust speed here
-            except asyncio.CancelledError:
-                pass
-
-        # Create the background task
-        animation_task = asyncio.create_task(animate_button_text(self))
-        
-        # Get the parsed Excel path from the Parser step output
-        # (We assume the parser saved it to [filename]_analysis.xlsx)
-        # A robust way is to regenerate the path or store it in state during run_parser.
-        # Let's derive it from cleaned_file_path for now as it's reliable.
+        # Get paths
         cleaned_file = msg.page.state.cleaned_file_path
         base_name, _ = os.path.splitext(cleaned_file)
         parsed_excel_path = f"{base_name}_analysis.xlsx"
         
         if not os.path.exists(parsed_excel_path):
-            animation_task.cancel()  # Stop the animation
             print(f"[ERROR] Parsed file not found: {parsed_excel_path}")
+            self.inner_html = ""
             self.text = "❌ Error: Input file missing"
-            # Restore UI if file missing
+            # Restore UI
             card1.classes = card1_original
             card2.classes = card2_original
             return
 
         try:
-            # 2. RUN THE GENERATOR (Non-blocking)
-            # We use asyncio.to_thread to run the heavy CPU/GPU task without freezing the UI
+            # 3. RUN THE GENERATOR (Non-blocking)
             meaning_excel_path, count = await asyncio.to_thread(generate_meanings_for_file, parsed_excel_path)
             
             msg.page.state.meaning_file_path = meaning_excel_path
@@ -528,7 +520,7 @@ def app():
             card1.classes = card1_original
             card2.classes = card2_original
             
-            # 3. UPDATE UI: Success
+            # 4. UPDATE UI: Success
             card3.delete_components()
             jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
@@ -538,16 +530,15 @@ def app():
             <div class="font-bold text-lg mb-2">✅ Meanings Generated</div>
             <div class="ml-4">
                 • <b>Templates Processed:</b> {count}<br>
-                • <b>Model:</b> Microsoft Phi-3-Mini-4k-Instruct
+                • <b>Model:</b> Microsoft Phi-3 Mini
             </div>
             """
             
             # Output File Name
             jp.Div(text=f"(Output File: {os.path.basename(meaning_excel_path)})", a=card3, classes="text-xs text-blue-600 italic mb-4")
 
-            # 4. COLLAPSIBLE TABLE (With Meanings)
+            # 5. COLLAPSIBLE TABLE
             df = pd.read_excel(meaning_excel_path, sheet_name='Template Summary')
-            # Sort by ID
             df = df.sort_values(by="Template ID")
             
             summary_wrap = jp.Div(a=card3, classes="border rounded shadow-sm bg-white mt-4 overflow-hidden")
@@ -563,7 +554,7 @@ def app():
             tr_head = jp.Tr(a=thead)
             jp.Th(text="ID", a=tr_head, classes="px-4 py-2 w-16 bg-gray-100")
             jp.Th(text="Template Pattern", a=tr_head, classes="px-4 py-2 w-1/3 bg-gray-100")
-            jp.Th(text="AI Meaning", a=tr_head, classes="px-4 py-2 bg-gray-100") # New Column
+            jp.Th(text="AI Meaning", a=tr_head, classes="px-4 py-2 bg-gray-100")
             
             tbody = jp.Tbody(a=table, classes="divide-y divide-gray-100")
             
@@ -571,10 +562,8 @@ def app():
                 tr = jp.Tr(a=tbody, classes="hover:bg-blue-50 transition-colors")
                 jp.Td(text=row['Template ID'], a=tr, classes="px-4 py-2 font-mono text-blue-600 align-top")
                 jp.Td(text=row['Template Pattern'], a=tr, classes="px-4 py-2 font-mono break-all align-top text-gray-500")
-                # Highlight the meaning
                 jp.Td(text=row['Event Meaning'], a=tr, classes="px-4 py-2 font-medium text-slate-800 align-top")
 
-            # Toggle Logic
             def toggle_meaning_summary(self, msg):
                 if "hidden" in summary_content.classes:
                     summary_content.classes = summary_content.classes.replace("hidden", "")
@@ -586,22 +575,22 @@ def app():
             summary_header.on('click', toggle_meaning_summary)
 
         except Exception as e:
-            print(f"[ERROR] Template Meaning Generation failed: {e}")
+            print(f"[ERROR] Meaning Generation failed: {e}")
+            
             # Unlock UI on error
             card1.classes = card1_original
             card2.classes = card2_original
+            
+            self.inner_html = "" # Remove Spinner
             self.text = "RETRY GENERATION"
             self.disabled = False
-            self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
-            jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")
             
-        finally:
-            # --- STOP ANIMATION ---
-            animation_task.cancel()
-            try:
-                await animation_task
-            except asyncio.CancelledError:
-                pass
+            # --- FIX ENDS HERE ---
+            # 2. On Error, we MUST restore pointer events so they can click 'Retry'
+            # (I changed this back to Red without pointer-events-none)
+            self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
+            
+            jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")    
     return wp
 
 jp.justpy(app, port=8000)
