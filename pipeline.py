@@ -3,6 +3,7 @@ import os
 import sys
 import base64
 import pandas as pd
+import asyncio
 
 # 1. SETUP: Connect to 'code' folder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
@@ -465,10 +466,39 @@ def app():
     # 4. NEW: MEANING GENERATION LOGIC
     # ------------------------------------------------------------------
     async def run_meaning_generation(self, msg):
-        # 1. Update UI: Show "Processing"
-        self.text = "⏳ Generating Meanings (Loading AI...)"
+        # 1. Update UI: Initial State
         self.disabled = True
-        self.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded cursor-wait animate-pulse"
+        # Removed 'animate-pulse' because we are doing our own text animation
+        self.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded cursor-wait"
+        
+        # --- LOCK UI: Grey out Step 1 and Step 2 ---
+        # Save original classes to restore later
+        card1_original = card1.classes
+        card2_original = card2.classes
+        
+        # Dim Card 1 (Step 1)
+        card1.classes = f"{card1_original} opacity-50 pointer-events-none"
+        
+        # Dim Card 2 (Step 2) - Replace opacity-100 with opacity-50
+        card2.classes = card2_original.replace("opacity-100", "opacity-50 pointer-events-none")
+        
+        # Force UI update so user sees the grey-out immediately
+        await msg.page.update()
+        
+        # --- START TEXT ANIMATION ---
+        async def animate_button_text(btn):
+            try:
+                dots = 0
+                while True:
+                    btn.text = f"GENERATING{'.' * dots}"
+                    await btn.update()
+                    dots = (dots + 1) % 4  # Cycles: 0, 1, 2, 3
+                    await asyncio.sleep(0.4) # Adjust speed here
+            except asyncio.CancelledError:
+                pass
+
+        # Create the background task
+        animation_task = asyncio.create_task(animate_button_text(self))
         
         # Get the parsed Excel path from the Parser step output
         # (We assume the parser saved it to [filename]_analysis.xlsx)
@@ -479,16 +509,24 @@ def app():
         parsed_excel_path = f"{base_name}_analysis.xlsx"
         
         if not os.path.exists(parsed_excel_path):
+            animation_task.cancel()  # Stop the animation
             print(f"[ERROR] Parsed file not found: {parsed_excel_path}")
             self.text = "❌ Error: Input file missing"
+            # Restore UI if file missing
+            card1.classes = card1_original
+            card2.classes = card2_original
             return
 
         try:
-            # 2. RUN THE GENERATOR
-            # This handles model loading, generation, and saving internally
-            meaning_excel_path, count = generate_meanings_for_file(parsed_excel_path)
+            # 2. RUN THE GENERATOR (Non-blocking)
+            # We use asyncio.to_thread to run the heavy CPU/GPU task without freezing the UI
+            meaning_excel_path, count = await asyncio.to_thread(generate_meanings_for_file, parsed_excel_path)
             
             msg.page.state.meaning_file_path = meaning_excel_path
+            
+            # --- UNLOCK UI: Restore Cards ---
+            card1.classes = card1_original
+            card2.classes = card2_original
             
             # 3. UPDATE UI: Success
             card3.delete_components()
@@ -500,7 +538,7 @@ def app():
             <div class="font-bold text-lg mb-2">✅ Meanings Generated</div>
             <div class="ml-4">
                 • <b>Templates Processed:</b> {count}<br>
-                • <b>Model:</b> Microsoft Phi-3 Mini
+                • <b>Model:</b> Microsoft Phi-3-Mini-4k-Instruct
             </div>
             """
             
@@ -549,11 +587,21 @@ def app():
 
         except Exception as e:
             print(f"[ERROR] Template Meaning Generation failed: {e}")
+            # Unlock UI on error
+            card1.classes = card1_original
+            card2.classes = card2_original
             self.text = "RETRY GENERATION"
             self.disabled = False
             self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
             jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")
             
+        finally:
+            # --- STOP ANIMATION ---
+            animation_task.cancel()
+            try:
+                await animation_task
+            except asyncio.CancelledError:
+                pass
     return wp
 
 jp.justpy(app, port=8000)
