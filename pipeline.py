@@ -454,7 +454,7 @@ def app():
                                         classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
             
            # Updated style: Blue, Italic, Centered (matches your request)
-            timer_label = jp.Div(text="", a=card3, classes="mt-2 text-center text-xs text-blue-600 italic font-bold hidden")
+            timer_label = jp.Div(text="", a=card3, classes="mt-2 text-center text-sm text-blue-600 italic font-bold hidden")
             btn_gen_meaning.timer_label = timer_label
             
             # CONNECT THE NEW HANDLER
@@ -485,31 +485,11 @@ def app():
         """
         self.classes = "w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed"
         
-        # --- TIMER SETUP ---
-        start_time = time.time()
-        self.is_generating = True
-        
-        # Helper to format time (e.g., "1m 30s")
-        def format_duration(seconds):
-            m, s = divmod(int(seconds), 60)
-            h, m = divmod(m, 60)
-            if h > 0: return f"{h}h {m}m {s}s"
-            if m > 0: return f"{m}m {s}s"
-            return f"{s}s"
-
-        # Background Task: Update the label below the button every second
-        async def timer_loop():
-            # Show the label
+        # --- SHOW LABEL ---
+        if hasattr(self, 'timer_label'):
+            self.timer_label.text = "Time Elapsed: 0s"
+            # Unhide the label
             self.timer_label.classes = self.timer_label.classes.replace("hidden", "block")
-            
-            while getattr(self, 'is_generating', False):
-                elapsed = time.time() - start_time
-                # Updates the text every second
-                self.timer_label.text = f"Time Elapsed: {format_duration(elapsed)}"
-                await self.timer_label.update()
-                await asyncio.sleep(1)
-
-        timer_task = asyncio.create_task(timer_loop())
 
         # --- LOCK CARDS ---
         card1_original = card1.classes
@@ -522,29 +502,66 @@ def app():
         
         await msg.page.update()
         
+        # FORCE UI UPDATE: Ensure "Generating..." and the Label appear BEFORE we start work
+        await msg.page.update()
+        await asyncio.sleep(0.1)
+        
+        # --- START CLIENT-SIDE TIMER (JavaScript) ---
+        # This runs in the browser, so it won't freeze when Python gets busy
+        start_time_py = time.time()
+        # We need the HTML ID of the label to update it via JS
+        label_id = self.timer_label.id 
+        current_time_ms = int(time.time() * 1000)
+        # JS Code: Calculates elapsed time and updates the div text every second
+        js_code = f"""
+        if (window.genTimer) clearInterval(window.genTimer);
+        var startTime = {current_time_ms};
+        window.genTimer = setInterval(function() {{
+            var now = new Date().getTime();
+            var diff = Math.floor((now - startTime) / 1000);
+            var m = Math.floor(diff / 60);
+            var s = diff % 60;
+            var h = Math.floor(m / 60);
+            m = m % 60;
+            var timeStr = s + "s";
+            if (m > 0) timeStr = m + "m " + timeStr;
+            if (h > 0) timeStr = h + "h " + timeStr;
+            
+            var el = document.getElementById('{label_id}');
+            if (el) el.innerText = "Time Elapsed: " + timeStr;
+        }}, 1000);
+        """
+        await msg.page.run_javascript(js_code)
+        
         # Get paths
         cleaned_file = msg.page.state.cleaned_file_path
         base_name, _ = os.path.splitext(cleaned_file)
         parsed_excel_path = f"{base_name}_analysis.xlsx"
         
         if not os.path.exists(parsed_excel_path):
-            self.is_generating = False # Stop timer
-            await timer_task
+            await msg.page.run_javascript("clearInterval(window.genTimer);")
             print(f"[ERROR] Parsed file not found: {parsed_excel_path}")
             self.inner_html = ""
             self.text = "❌ Error: Input file missing"
             # Restore UI
             card1.classes = card1_original
             card2.classes = card2_original
+            if hasattr(self, 'timer_label'): self.timer_label.classes = self.timer_label.classes.replace("block", "hidden")
             return
 
         try:
             # 2. RUN GENERATOR
             meaning_excel_path, count = await asyncio.to_thread(generate_meanings_for_file, parsed_excel_path)
             
-            # --- CALCULATE FINAL TIME ---
-            end_time = time.time()
-            total_duration = format_duration(end_time - start_time)
+            # --- STOP CLIENT TIMER ---
+            await msg.page.run_javascript("clearInterval(window.genTimer);")
+            # Calculate final static time for the report
+            total_elapsed = int(time.time() - start_time_py)
+            m, s = divmod(total_elapsed, 60)
+            h, m = divmod(m, 60)
+            if h > 0: total_duration = f"{h}h {m}m {s}s"
+            elif m > 0: total_duration = f"{m}m {s}s"
+            else: total_duration = f"{s}s"
 
             msg.page.state.meaning_file_path = meaning_excel_path
             
@@ -609,6 +626,7 @@ def app():
 
         except Exception as e:
             print(f"[ERROR] Meaning Generation failed: {e}")
+            await msg.page.run_javascript("clearInterval(window.genTimer);")
             
             card1.classes = card1_original
             card2.classes = card2_original
@@ -616,18 +634,13 @@ def app():
             self.inner_html = "" 
             self.text = "RETRY GENERATION"
             self.disabled = False
-            # Restore to red error state
             self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
             
             # Hide timer label on error
             if hasattr(self, 'timer_label'):
                 self.timer_label.classes = self.timer_label.classes.replace("block", "hidden")
                 
-            jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")
-            
-        finally:
-            self.is_generating = False
-            await timer_task   
+            jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")  
     return wp
 
 jp.justpy(app, port=8000)
