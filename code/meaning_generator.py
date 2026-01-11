@@ -228,7 +228,7 @@ def generate_meanings_for_file(input_excel_path):
         # [NEW] Run Batch Inference
         # batch_size=8 is a good starting point for 4GB-8GB VRAM. 
         # Increase to 16 or 32 if you have a powerful GPU (3090/4090).
-        results = pipe(batch_prompts, batch_size=8)
+        results = pipe(batch_prompts, batch_size=4)
 
         # Iterate through the results and the metadata lists simultaneously
         for i, output in enumerate(results):
