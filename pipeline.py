@@ -5,7 +5,6 @@ import base64
 import pandas as pd
 import asyncio
 import time
-import
 
 # 1. SETUP: Connect to 'code' folder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
@@ -134,6 +133,12 @@ def app():
     jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
     jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
 
+    # =========================================================
+    # STEP 4: EXECUTIVE SUMMARY (New)
+    # =========================================================
+    card4 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8")
+    jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+    jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
 
     # =========================================================
     # LOGIC HANDLERS
@@ -196,7 +201,7 @@ def app():
                     card2.delete_components()
                     jp.Div(text="Step 2: Parsing", a=card2, classes="text-xl font-bold italic mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 1 completion...", a=card2, classes="text-sm text-gray-500 italic")
-                    # --- ADD THIS: RESET STEP 3 ---
+                    # --- RESET STEP 3 ---
                     card3.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
                     card3.delete_components()
                     jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
@@ -204,6 +209,11 @@ def app():
                 else:
                     print("[ERROR] Empty file content received.")
                     upload_status.text = "Error: Browser sent empty file."
+                    # --- ADD THIS: RESET STEP 4 ---
+                    card4.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
+                    card4.delete_components()
+                    jp.Div(text="Step 4: Summarize", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+                    jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
         else:
             print("[WARNING] No file selected.")
             upload_status.text = "No file selected."
@@ -349,6 +359,11 @@ def app():
         card3.delete_components()
         jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
         jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
+        # --- RESET STEP 4 ---
+        card4.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
+        card4.delete_components()
+        jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+        jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
         
         # --- CONNECT THE PARSER BUTTON ---
         btn_parse = jp.Button(text="PARSE", a=card2, 
@@ -586,6 +601,22 @@ def app():
                     toggle_icon.text = "▼"
             
             summary_header.on('click', toggle_meaning_summary)
+            
+            # ========================================================
+            # UNLOCK STEP 4
+            # ========================================================
+            card4.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 transition-all duration-500 mt-8"
+            card4.delete_components()
+            jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            
+            jp.Div(text="Ready to compile the final executive report.", a=card4, classes="text-green-600 font-medium mb-4")
+            
+            # Create the Summary Button
+            btn_summary = jp.Button(text="CREATE SUMMARY", a=card4, 
+                                    classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
+            
+            # Connect the handler
+            btn_summary.on('click', run_summary_generation)
 
         except Exception as e:
             print(f"[ERROR] Meaning Generation failed: {e}")
@@ -593,11 +624,25 @@ def app():
             card1.classes = card1_original
             card2.classes = card2_original
             
+            
             self.inner_html = "" 
             self.text = "RETRY GENERATION"
             self.disabled = False
             self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"    
             jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")  
+            
+     # ------------------------------------------------------------------
+    # 5. STEP 4: SUMMARY GENERATION LOGIC
+    # ------------------------------------------------------------------
+    async def run_summary_generation(self, msg):
+        print("Summary button clicked!")
+        self.text = "Generating Summary..."
+        self.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded cursor-wait"
+        self.disabled = True
+        
+        # Placeholder for actual logic
+        await asyncio.sleep(1) 
+        self.text = "Done (Placeholder)"
+        
     return wp
-
 jp.justpy(app, port=8000)
