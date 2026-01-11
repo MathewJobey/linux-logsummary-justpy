@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
 from meaning_generator import generate_meanings_for_file
-from summary_engine import step_1_merge_sentences
+from summary_engine import step_1_merge_sentences, step_2_sort_logs
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -636,9 +636,9 @@ def app():
     # 5. STEP 4: SUMMARY GENERATION LOGIC
     # ------------------------------------------------------------------
     async def run_summary_generation(self, msg):
-        print("Summary button clicked!")
+        print("------ [SUMMARIZING] ------")
         
-        # --- UI UPDATE: SPINNER & "SUMMARIZING..." ---
+        # --- UI UPDATE: SPINNER ---
         self.disabled = True
         self.text = "" 
         self.inner_html = """
@@ -650,7 +650,6 @@ def app():
             SUMMARIZING...
         </div>
         """
-        # Greyed out, unclickable style (Same as Generation button)
         self.classes = "w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed"
         
         await msg.page.update()
@@ -662,32 +661,39 @@ def app():
             if not input_file or not os.path.exists(input_file):
                 raise FileNotFoundError("Step 3 output file missing.")
 
-            # --- RUN STEP 1 (MERGE) ---
-            # This runs the function in summary_engine.py
+            # --- 1. MERGE ---
             file_merged = await asyncio.to_thread(step_1_merge_sentences, input_file)
             
-            # --- DONE (Test Mode) ---
-            self.inner_html = "" # Clear the spinner
-            self.text = "✅ MERGE COMPLETE"
+            # --- 2. SORT ---
+            file_sorted = await asyncio.to_thread(step_2_sort_logs, file_merged)
+            
+            # Terminal footer (requested format)
+            print("---------------------------------------------------------------------------")
+            print(f"File Saved To: {os.path.abspath(file_sorted)}")
+            
+            # --- DONE ---
+            self.inner_html = "" 
+            self.text = "✅ SUMMARY COMPLETE"
             self.classes = "w-full bg-green-600 text-white font-bold py-3 px-6 rounded shadow cursor-default"
             
             # Display Verification Results
             result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-4 rounded text-sm text-green-900 font-mono")
             result_box.inner_html = f"""
-            <b>Merge Test Successful!</b><br>
+            <b>Steps 1 & 2 Successful!</b><br>
             📂 <b>Merged Data:</b> {os.path.basename(file_merged)}<br>
+            📂 <b>Sorted Data:</b> {os.path.basename(file_sorted)}<br>
             <br>
-            <i>You can now check the file in the 'Logs' folder to see if parameters (like IPs/Usernames) were inserted correctly into the sentences.</i>
+            <i>The logs are now combined with their parameters and sorted chronologically.</i>
             """
 
         except Exception as e:
             print(f"[ERROR] Summary failed: {e}")
             
-            self.inner_html = "" # Clear the spinner
-            self.text = "❌ MERGE FAILED"
+            self.inner_html = "" 
+            self.text = "❌ FAILED"
             self.classes = "w-full bg-red-600 text-white font-bold py-3 px-6 rounded shadow cursor-pointer"
             self.disabled = False
             jp.Div(text=f"Error: {str(e)}", a=card4, classes="text-red-600 font-bold mt-2")
-        
+                    
     return wp
 jp.justpy(app, port=8000)

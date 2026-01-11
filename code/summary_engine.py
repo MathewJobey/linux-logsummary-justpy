@@ -51,7 +51,7 @@ def step_1_merge_sentences(input_file):
     Reads the input Excel (with generic meanings), fills in specific parameters,
     and saves a new Excel file with a 'Meaning Log' column.
     """
-    print(f"[Summary Step 1] Merging parameters in: {os.path.basename(input_file)}")
+    print(f"[MERGE] Merging parameters in: {os.path.basename(input_file)}")
     
     # 1. Load Data
     try:
@@ -88,9 +88,69 @@ def step_1_merge_sentences(input_file):
         
     output_path = os.path.join(base_dir, new_name)
     
-    print(f"[Summary Step 1] Saving to: {os.path.basename(output_path)}")
+    print(f"[MERGE] Saving to: {os.path.basename(output_path)}")
     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
         df_logs.to_excel(writer, sheet_name='Log Analysis', index=False)
         df_templates.to_excel(writer, sheet_name='Template Summary', index=False)
         
+    return output_path
+
+# ==========================================
+# PART 2: SORTING
+# ==========================================
+
+def get_time_from_json(params_str):
+    """
+    Parses the JSON string: '{"TIMESTAMP": "Jun 14...", ...}'
+    Returns a real datetime object.
+    """
+    try:
+        if pd.isna(params_str): return pd.NaT
+        params = json.loads(str(params_str))
+        time_str = params.get('TIMESTAMP')
+        if not time_str: return pd.NaT
+        return parser.parse(time_str)
+    except:
+        return pd.NaT
+
+def step_2_sort_logs(input_file):
+    """
+    Reads the merged Excel, extracts timestamps from parameters,
+    sorts the logs chronologically, and saves a '_sorted.xlsx' file.
+    """
+    print(f"[SORT] Sorting logs: {os.path.basename(input_file)}")
+    # 1. Load Data
+    try:
+        df_logs = pd.read_excel(input_file, sheet_name="Log Analysis")
+        df_templates = pd.read_excel(input_file, sheet_name="Template Summary")
+    except Exception as e:
+        raise ValueError(f"Error reading Excel file: {e}")
+
+    # 2. Extract & Sort
+    if 'Parameters' in df_logs.columns:
+        # Create temp column for sorting
+        df_logs['Temp_Timestamp'] = df_logs['Parameters'].apply(get_time_from_json)
+        
+        # Check if actually valid dates were found
+        if df_logs['Temp_Timestamp'].notna().sum() > 0:
+            df_logs = df_logs.sort_values(by='Temp_Timestamp', ascending=True)
+        
+        # Drop the temp column (clean up)
+        df_logs = df_logs.drop(columns=['Temp_Timestamp'])
+    
+    # 3. Save Output
+    base_dir = os.path.dirname(input_file)
+    base_name = os.path.basename(input_file)
+
+    # Always: <inputfilename>_sorted.xlsx
+    stem, _ext = os.path.splitext(base_name)
+    new_name = f"{stem}_sorted.xlsx"
+
+    output_path = os.path.join(base_dir, new_name)
+
+    print(f"[SORT] Saving to: {os.path.basename(output_path)}")
+    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+        df_logs.to_excel(writer, sheet_name='Log Analysis', index=False)
+        df_templates.to_excel(writer, sheet_name='Template Summary', index=False)
+
     return output_path
