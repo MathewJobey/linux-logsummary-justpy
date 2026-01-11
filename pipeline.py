@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
 from meaning_generator import generate_meanings_for_file
+from summary_engine import step_1_merge_sentences
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -631,18 +632,62 @@ def app():
             self.classes = "w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"    
             jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")  
             
-     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # 5. STEP 4: SUMMARY GENERATION LOGIC
     # ------------------------------------------------------------------
     async def run_summary_generation(self, msg):
         print("Summary button clicked!")
-        self.text = "Generating Summary..."
-        self.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded cursor-wait"
-        self.disabled = True
         
-        # Placeholder for actual logic
-        await asyncio.sleep(1) 
-        self.text = "Done (Placeholder)"
+        # --- UI UPDATE: SPINNER & "SUMMARIZING..." ---
+        self.disabled = True
+        self.text = "" 
+        self.inner_html = """
+        <div class="flex items-center justify-center">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            SUMMARIZING...
+        </div>
+        """
+        # Greyed out, unclickable style (Same as Generation button)
+        self.classes = "w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed"
+        
+        await msg.page.update()
+        
+        try:
+            # Get input file (The output from Step 3)
+            input_file = msg.page.state.meaning_file_path
+            
+            if not input_file or not os.path.exists(input_file):
+                raise FileNotFoundError("Step 3 output file missing.")
+
+            # --- RUN STEP 1 (MERGE) ---
+            # This runs the function in summary_engine.py
+            file_merged = await asyncio.to_thread(step_1_merge_sentences, input_file)
+            
+            # --- DONE (Test Mode) ---
+            self.inner_html = "" # Clear the spinner
+            self.text = "✅ MERGE COMPLETE"
+            self.classes = "w-full bg-green-600 text-white font-bold py-3 px-6 rounded shadow cursor-default"
+            
+            # Display Verification Results
+            result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-4 rounded text-sm text-green-900 font-mono")
+            result_box.inner_html = f"""
+            <b>Merge Test Successful!</b><br>
+            📂 <b>Merged Data:</b> {os.path.basename(file_merged)}<br>
+            <br>
+            <i>You can now check the file in the 'Logs' folder to see if parameters (like IPs/Usernames) were inserted correctly into the sentences.</i>
+            """
+
+        except Exception as e:
+            print(f"[ERROR] Summary failed: {e}")
+            
+            self.inner_html = "" # Clear the spinner
+            self.text = "❌ MERGE FAILED"
+            self.classes = "w-full bg-red-600 text-white font-bold py-3 px-6 rounded shadow cursor-pointer"
+            self.disabled = False
+            jp.Div(text=f"Error: {str(e)}", a=card4, classes="text-red-600 font-bold mt-2")
         
     return wp
 jp.justpy(app, port=8000)
