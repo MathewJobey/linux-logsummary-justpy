@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
 from meaning_generator import generate_meanings_for_file
-from summary_engine import step_1_merge_sentences, step_2_sort_logs
+from summary_engine import step_1_merge_sentences, step_2_sort_logs, step_3_generate_report
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -667,11 +667,14 @@ def app():
             # --- 2. SORT ---
             file_sorted = await asyncio.to_thread(step_2_sort_logs, file_merged)
             
+            # --- 3. REPORT ---
+            report_path = await asyncio.to_thread(step_3_generate_report, file_sorted)
+            
             # Terminal footer (requested format)
             print("---------------------------------------------------------------------------")
             print(f"File Saved To: {os.path.abspath(file_sorted)}")
             
-            # --- DONE ---
+           # --- DONE ---
             self.inner_html = "" 
             self.text = "✅ SUMMARY COMPLETE"
             self.classes = "w-full bg-green-600 text-white font-bold py-3 px-6 rounded shadow cursor-default"
@@ -679,11 +682,12 @@ def app():
             # Display Verification Results
             result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-4 rounded text-sm text-green-900 font-mono")
             result_box.inner_html = f"""
-            <b>Steps 1 & 2 Successful!</b><br>
+            <b>Executive Summary Generated!</b><br>
             📂 <b>Merged Data:</b> {os.path.basename(file_merged)}<br>
             📂 <b>Sorted Data:</b> {os.path.basename(file_sorted)}<br>
+            📄 <b>Full Report:</b> {os.path.basename(report_path)}<br>
             <br>
-            <i>The logs are now combined with their parameters and sorted chronologically.</i>
+            <i>Check the 'Logs' folder for the generated report and 6 visualization charts.</i>
             """
 
         except Exception as e:
