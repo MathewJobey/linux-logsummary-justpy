@@ -38,11 +38,13 @@ def create_all_charts(df_logs, output_dir, resample_rule, time_unit, date_format
 
     # 2. Top Services
     plt.figure(figsize=(10, 5))
-    ax = df_logs['Service'].value_counts().head(10).sort_values().plot(kind='barh', color='#2ca02c')
-    add_bar_labels(ax)
-    plt.title('Top System Services')
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, '2_top_services.png'))
+    services = df_logs['Service'].value_counts().head(10).sort_values()
+    if not services.empty:
+        ax = services.plot(kind='barh', color='#2ca02c')
+        add_bar_labels(ax)
+        plt.title('Top System Services')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '2_top_services.png'))
     plt.close()
 
     # 3. Top Templates
@@ -57,22 +59,37 @@ def create_all_charts(df_logs, output_dir, resample_rule, time_unit, date_format
         plt.savefig(os.path.join(output_dir, '3_top_templates.png'))
     plt.close()
 
-    # 4. Top Users
+    # 4. Top Users (FIXED)
     plt.figure(figsize=(10, 5))
-    ax = df_logs[df_logs['USERNAME'] != 'N/A']['USERNAME'].value_counts().head(10).sort_values().plot(kind='barh', color='#9467bd')
-    add_bar_labels(ax)
-    plt.title('Top Active Users')
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, '4_top_users.png'))
+    top_users = df_logs[df_logs['USERNAME'] != 'N/A']['USERNAME'].value_counts().head(10).sort_values()
+    
+    if not top_users.empty:
+        ax = top_users.plot(kind='barh', color='#9467bd')
+        add_bar_labels(ax)
+        plt.title('Top Active Users')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '4_top_users.png'))
+    else:
+        # Create a placeholder if empty
+        plt.text(0.5, 0.5, 'No User Data Available', ha='center', va='center')
+        plt.title('Top Active Users (Empty)')
+        plt.savefig(os.path.join(output_dir, '4_top_users.png'))
     plt.close()
 
-    # 5. Top IPs
+    # 5. Top IPs (FIXED)
     plt.figure(figsize=(10, 5))
-    ax = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].value_counts().head(10).sort_values().plot(kind='barh', color='#d62728')
-    add_bar_labels(ax)
-    plt.title('Top Remote IPs')
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, '5_top_ips.png'))
+    top_ips = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].value_counts().head(10).sort_values()
+    
+    if not top_ips.empty:
+        ax = top_ips.plot(kind='barh', color='#d62728')
+        add_bar_labels(ax)
+        plt.title('Top Remote IPs')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '5_top_ips.png'))
+    else:
+        plt.text(0.5, 0.5, 'No IP Data Available', ha='center', va='center')
+        plt.title('Top Remote IPs (Empty)')
+        plt.savefig(os.path.join(output_dir, '5_top_ips.png'))
     plt.close()
 
     # 6. Security Breakdown
