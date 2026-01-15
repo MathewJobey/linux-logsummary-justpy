@@ -674,20 +674,24 @@ def app():
             print("---------------------------------------------------------------------------")
             print(f"File Saved To: {os.path.abspath(file_sorted)}")
             
-           # --- DONE ---
-            self.inner_html = "" 
-            self.text = "✅ SUMMARY COMPLETE"
-            self.classes = "w-full bg-green-600 text-white font-bold py-3 px-6 rounded shadow cursor-default"
+            # --- SUCCESS: WIPE CARD & SHOW RESULTS ---
+            card4.delete_components()
             
-            # Display Verification Results
-            result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-4 rounded text-sm text-green-900 font-mono")
+            # Re-add Header
+            jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            
+            # Display Verification Results (No Button)
+            result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-6 rounded-lg text-sm text-green-900 font-mono shadow-sm")
             result_box.inner_html = f"""
-            <b>Executive Summary Generated!</b><br>
-            📂 <b>Merged Data:</b> {os.path.basename(file_merged)}<br>
-            📂 <b>Sorted Data:</b> {os.path.basename(file_sorted)}<br>
-            📄 <b>Full Report:</b> {os.path.basename(report_path)}<br>
-            <br>
-            <i>Check the 'Logs' folder for the generated report and 5 visualization charts.</i>
+            <div class="text-green-800 font-bold text-lg mb-2">✅ Executive Summary Complete</div>
+            <ul class="list-none space-y-1 text-sm text-green-700 font-mono ml-2">
+                <li>📂 <b>Merged Data:</b> {os.path.basename(file_merged)}</li>
+                <li>📂 <b>Sorted Data:</b> {os.path.basename(file_sorted)}</li>
+                <li>📄 <b>Full Report:</b> {os.path.basename(report_path)}</li>
+            </ul>
+            <div class="mt-3 text-xs text-green-600 italic">
+                Files and charts have been saved to the 'Logs' folder.
+            </div>
             """
 
         except Exception as e:
