@@ -687,14 +687,14 @@ def app():
             📂 <b>Sorted Data:</b> {os.path.basename(file_sorted)}<br>
             📄 <b>Full Report:</b> {os.path.basename(report_path)}<br>
             <br>
-            <i>Check the 'Logs' folder for the generated report and 6 visualization charts.</i>
+            <i>Check the 'Logs' folder for the generated report and 5 visualization charts.</i>
             """
 
         except Exception as e:
             print(f"[ERROR] Summary failed: {e}")
             
             self.inner_html = "" 
-            self.text = "❌ FAILED"
+            self.text = "FAILED"
             self.classes = "w-full bg-red-600 text-white font-bold py-3 px-6 rounded shadow cursor-pointer"
             self.disabled = False
             jp.Div(text=f"Error: {str(e)}", a=card4, classes="text-red-600 font-bold mt-2")

@@ -6,7 +6,8 @@ import matplotlib.dates as mdates
 
 def create_all_charts(df_logs, output_dir, resample_rule, time_unit, date_format, xlabel_text):
     """
-    Generates all 6 visualization charts and saves them to output_dir.
+    Generates 5 visualization charts (Charts 1-5).
+    Chart 6 (Security Breakdown Pie) has been removed.
     Returns: (peak_time_string, peak_volume) for the report.
     """
     print("[GRAPHS] Generating visualizations...")
@@ -59,7 +60,7 @@ def create_all_charts(df_logs, output_dir, resample_rule, time_unit, date_format
         plt.savefig(os.path.join(output_dir, '3_top_templates.png'))
     plt.close()
 
-    # 4. Top Users (FIXED)
+    # 4. Top Users
     plt.figure(figsize=(10, 5))
     top_users = df_logs[df_logs['USERNAME'] != 'N/A']['USERNAME'].value_counts().head(10).sort_values()
     
@@ -70,13 +71,13 @@ def create_all_charts(df_logs, output_dir, resample_rule, time_unit, date_format
         plt.tight_layout()
         plt.savefig(os.path.join(output_dir, '4_top_users.png'))
     else:
-        # Create a placeholder if empty
+        plt.figure(figsize=(6, 4))
         plt.text(0.5, 0.5, 'No User Data Available', ha='center', va='center')
         plt.title('Top Active Users (Empty)')
         plt.savefig(os.path.join(output_dir, '4_top_users.png'))
     plt.close()
 
-    # 5. Top IPs (FIXED)
+    # 5. Top IPs
     plt.figure(figsize=(10, 5))
     top_ips = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].value_counts().head(10).sort_values()
     
@@ -87,31 +88,10 @@ def create_all_charts(df_logs, output_dir, resample_rule, time_unit, date_format
         plt.tight_layout()
         plt.savefig(os.path.join(output_dir, '5_top_ips.png'))
     else:
+        plt.figure(figsize=(6, 4))
         plt.text(0.5, 0.5, 'No IP Data Available', ha='center', va='center')
         plt.title('Top Remote IPs (Empty)')
         plt.savefig(os.path.join(output_dir, '5_top_ips.png'))
     plt.close()
 
-    # 6. Security Breakdown
-    plt.figure(figsize=(8, 6))
-    sec_counts = df_logs[df_logs['Security_Tag'] != 'Normal']['Security_Tag'].value_counts()
-    
-    # Custom colors
-    color_map = {
-        'Successful Login': '#99ff99', 
-        'Auth Failure': '#ff9999', 
-        'Root Activity': '#ffcc99', 
-        'Illegal Access': '#c2c2f0', 
-        'Normal': '#f0f0f0'
-    }
-    colors = [color_map.get(x, '#cccccc') for x in sec_counts.index]
-
-    if not sec_counts.empty:
-        sec_counts.plot(kind='pie', autopct='%1.1f%%', colors=colors)
-        plt.title('Security Event Distribution')
-        plt.ylabel('')
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, '6_security_breakdown.png'))
-    plt.close()
-    
     return peak_str, peak_vol

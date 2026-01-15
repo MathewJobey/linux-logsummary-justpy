@@ -4,7 +4,7 @@ import os
 import re
 from dateutil import parser
 
-# --- NEW IMPORTS ---
+# --- IMPORTS FROM NEW MODULES ---
 from graph_generator import create_all_charts
 from static_summary import write_executive_summary
 
@@ -13,54 +13,36 @@ from static_summary import write_executive_summary
 # ==========================================
 
 def fill_meaning_from_json(row, meaning_map):
-    """
-    1. Grabs the 'Event Meaning' using the Template ID.
-    2. Parses the 'Parameters' JSON.
-    3. Replaces <USER> with 'root' in the sentence.
-    """
     # Ensure ID is string to match the map keys
     template_id = str(row.get('Template ID', ''))
     params_json = row.get('Parameters')
-    
-    # Get the abstract meaning sentence
     meaning_template = meaning_map.get(template_id)
     
-    if not meaning_template:
-        return "Error: Template ID not found"
-    
-    if pd.isna(params_json) or str(params_json).strip() == '{}':
-        return meaning_template
+    if not meaning_template: return "Error: Template ID not found"
+    if pd.isna(params_json) or str(params_json).strip() == '{}': return meaning_template
 
     try:
         params_dict = json.loads(str(params_json))
         final_sentence = meaning_template
-        
         for key, value in params_dict.items():
             placeholder = f"<{key}>"
             final_sentence = final_sentence.replace(placeholder, str(value))
-            
         return final_sentence
-
     except:
         return meaning_template
     
 def step_1_merge_sentences(input_file):
     print(f"[MERGE] Merging parameters in: {os.path.basename(input_file)}")
-    
     try:
         df_logs = pd.read_excel(input_file, sheet_name="Log Analysis")
         df_templates = pd.read_excel(input_file, sheet_name="Template Summary")
     except Exception as e:
         raise ValueError(f"Error reading Excel file: {e}")
     
-    # Ensure Template IDs are consistent strings
     df_logs['Template ID'] = df_logs['Template ID'].astype(str)
     df_templates['Template ID'] = df_templates['Template ID'].astype(str)
-
-    # Map Templates {ID: Meaning}
     meaning_map = dict(zip(df_templates['Template ID'], df_templates['Event Meaning']))
     
-    # Generate Specific Meanings
     df_logs['Meaning Log'] = df_logs.apply(lambda row: fill_meaning_from_json(row, meaning_map), axis=1)
     
     # Reorder Columns
@@ -191,13 +173,40 @@ def step_3_generate_report(file_path):
         return 'INFO'
     df_logs['Severity'] = df_logs.apply(classify_severity, axis=1)
 
+    # --- SECURITY ANALYST IMPROVEMENTS ---
     def classify_security(row):
-        text = str(row['Raw Log']).lower()
-        if 'illegal' in text: return 'Illegal Access'
-        if 'authentication failure' in text: return 'Auth Failure'
-        if 'root' in text and 'session' in text: return 'Root Activity'
-        if 'session opened' in text or 'accepted' in text: return 'Successful Login'
-        return 'Normal'
+        text = (str(row['Raw Log']) + " " + str(row['Meaning Log'])).lower()
+        tags = []
+
+        # Check threats
+        if 'illegal' in text or 'invalid user' in text: 
+            tags.append('Illegal Access')
+            
+        # --- IMPROVED AUTH FAILURE DETECTION ---
+        # Catches: 
+        # 1. "authentication failure" (standard SSH)
+        # 2. "failed password" (standard SSH)
+        # 3. "authentication failed" (klogind, etc.)
+        # 4. "couldn't authenticate" (gdm-binary)
+        if ('authentication failure' in text or 
+            'failed password' in text or 
+            'authentication failed' in text or 
+            "couldn't authenticate" in text): 
+            tags.append('Auth Failure')
+        
+        # Check privilege (INDEPENDENT CHECK)
+        if 'sudo' in text or 'su(' in text or 'uid=0' in text or 'id=0' in text or 'user=root' in text:
+            tags.append('Privilege Activity')
+            
+        # Check success
+        if 'session opened' in text or 'accepted password' in text or 'accepted publickey' in text: 
+            tags.append('Successful Login')
+            
+        # Return combined string (e.g., "Auth Failure; Privilege Activity")
+        if not tags:
+            return 'Normal'
+        return "; ".join(tags)
+            
     df_logs['Security_Tag'] = df_logs.apply(classify_security, axis=1)
 
     # 3. Calculate Time Metrics

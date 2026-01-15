@@ -4,7 +4,8 @@ import os
 
 def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_map):
     """
-    Writes the text-based executive summary to the specified path.
+    Writes the text-based executive summary.
+    Includes 'Rarest Logs' section based on minimum occurrences.
     """
     print(f"[SUMMARY] Writing report to {os.path.basename(output_path)}...")
     
@@ -24,10 +25,23 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     crit_count = sev_counts.get('CRITICAL', 0)
     warn_count = sev_counts.get('WARNING', 0)
     
-    root_events = df_logs[df_logs['Security_Tag'] == 'Root Activity']
-    auth_fails = df_logs[df_logs['Security_Tag'] == 'Auth Failure']
-    success_logins = df_logs[df_logs['Security_Tag'] == 'Successful Login']
+    # Use str.contains to count overlapping tags
+    priv_events = df_logs[df_logs['Security_Tag'].str.contains('Privilege Activity', na=False)]
+    auth_fails = df_logs[df_logs['Security_Tag'].str.contains('Auth Failure', na=False)]
+    success_logins = df_logs[df_logs['Security_Tag'].str.contains('Successful Login', na=False)]
     
+    # Security Analyst Insight: Unique IPs
+    unique_ips = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].nunique()
+    
+    # --- RAREST LOGS LOGIC ---
+    # Find the absolute minimum count in the dataset
+    template_counts = df_logs['Template ID'].value_counts()
+    min_occurrence = template_counts.min() if not template_counts.empty else 0
+    
+    # Filter templates that appear exactly `min_occurrence` times
+    rare_template_ids = template_counts[template_counts == min_occurrence].index.tolist()
+    rare_count = len(rare_template_ids)
+
     # --- Report Structure ---
     lines = [
         "============================================================",
@@ -39,15 +53,17 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         "---------------------",
         f"Analysis Period:      {min_time.strftime('%Y-%b-%d %H:%M')} to {max_time.strftime('%Y-%b-%d %H:%M')}",
         f"Total Log Entries:    {total_events}",
+        f"Unique Source IPs:    {unique_ips} (Distinct machines contacting this server)",
         f"Health Status:        {'⚠️ ATTENTION NEEDED' if crit_count > 0 else '✅ STABLE'}",
         "",
         "2. SECURITY AUDIT",
         "---------------------",
-        f"🔴 Critical Events:     {crit_count} events detected",
-        f"🟠 Warning Events:      {warn_count} events detected",
-        f"🔐 Auth Failures:       {len(auth_fails)} failed login attempts",
-        f"⚡ Root Activity:       {len(root_events)} sessions involving root user",
-        f"✅ Successful Logins:   {len(success_logins)} sessions established",
+        f"🔴 Critical Events:     {crit_count}",
+        f"🟠 Warning Events:      {warn_count}",
+        f"🔐 Auth Failures:       {len(auth_fails)}",
+        f"⚡ Privilege Activity:  {len(priv_events)} (sudo, su, uid=0)",
+        f"✅ Successful Logins:   {len(success_logins)}",
+        f"🔍 Rare Anomalies:      {rare_count} types appeared {min_occurrence} time(s) (Least Frequent)",
         "",
         "3. ACTIVITY ANALYSIS",
         "---------------------",
@@ -66,48 +82,71 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     lines.append("5. RISK EVENT HIGHLIGHTS (Strictly Critical/Warning)")
     lines.append("--------------------------------------------------")
     
-    def add_risk_section(sev_label, group_list):
+    def add_section_content(group_list):
         if not group_list:
-            lines.append(f"✅ No '{sev_label}' events found.")
-        else:
-            lines.append(f"{'🔴' if sev_label == 'CRITICAL' else '🟠'} {sev_label} EVENTS ({len(group_list)} types):")
-            for tid, group in group_list:
-                if group.empty: continue
-                count = len(group)
-                row = group.iloc[0]
-                
-                # Logic to show specific log vs generic template
-                if count == 1:
-                    log_content = str(row['Raw Log']).strip()
-                    meaning_content = str(row['Meaning Log']).strip()
-                    label_type = "RAW"
+            lines.append("✅ None found.")
+            return
+
+        for tid, group in group_list:
+            if group.empty: continue
+            count = len(group)
+            row = group.iloc[0]
+            
+            if count == 1:
+                log_content = str(row['Raw Log']).strip()
+                meaning_content = str(row['Meaning Log']).strip()
+                label = "RAW"
+            else:
+                if 'Drained Named Log' in df_logs.columns:
+                    log_content = str(row['Drained Named Log']).strip()
                 else:
-                    if 'Drained Named Log' in df_logs.columns:
-                        log_content = str(row['Drained Named Log']).strip()
-                    else:
-                        log_content = str(row['Raw Log']).strip()
-                    
-                    # FIX: Use correct variable name 'generic_map'
-                    meaning_content = generic_map.get(str(tid), str(row['Meaning Log'])).strip()
-                    label_type = "TEMPLATE"
+                    log_content = str(row['Raw Log']).strip()
+                meaning_content = generic_map.get(str(tid), str(row['Meaning Log'])).strip()
+                label = "TEMPLATE"
 
-                lines.append(f"   [Count: {count}] Template {tid}")
-                lines.append(f"   {label_type}:     {textwrap.fill(log_content, width=100, subsequent_indent='            ')}")
-                lines.append(f"   MEANING: {textwrap.fill(meaning_content, width=100, subsequent_indent='            ')}")
-                lines.append("")
+            lines.append(f"   [Count: {count}] Template {tid}")
+            lines.append(f"   {label}:    {textwrap.fill(log_content, width=100, subsequent_indent='            ')}")
+            lines.append(f"   MEANING: {textwrap.fill(meaning_content, width=100, subsequent_indent='            ')}")
+            lines.append("")
 
-    # Critical Section
-    crit_groups = df_logs[df_logs['Severity'] == 'CRITICAL'].groupby('Template ID')
-    sorted_crit = sorted(crit_groups, key=lambda x: len(x[1]), reverse=True)
-    add_risk_section("CRITICAL", sorted_crit)
+    # Add Critical
+    if crit_count > 0:
+        lines.append(f"🔴 CRITICAL EVENTS:")
+        crit_groups = df_logs[df_logs['Severity'] == 'CRITICAL'].groupby('Template ID')
+        sorted_crit = sorted(crit_groups, key=lambda x: len(x[1]), reverse=True)
+        add_section_content(sorted_crit)
+    else:
+        lines.append("✅ No Critical events found.")
     
     lines.append("")
+
+    # Add Warning
+    if warn_count > 0:
+        lines.append(f"🟠 WARNING EVENTS:")
+        warn_groups = df_logs[df_logs['Severity'] == 'WARNING'].groupby('Template ID')
+        sorted_warn = sorted(warn_groups, key=lambda x: len(x[1]), reverse=True)
+        add_section_content(sorted_warn)
+    else:
+        lines.append("✅ No Warning events found.")
+
+    lines.append("")
+
+    # --- 6. RAREST LOG PATTERNS (New Section) ---
+    lines.append(f"6. RAREST LOG PATTERNS (Occurred {min_occurrence} times)")
+    lines.append("--------------------------------------------------")
+    lines.append("These are the least frequent events, often indicating anomalies or outliers.")
+    lines.append("")
     
-    # Warning Section
-    warn_groups = df_logs[df_logs['Severity'] == 'WARNING'].groupby('Template ID')
-    sorted_warn = sorted(warn_groups, key=lambda x: len(x[1]), reverse=True)
-    add_risk_section("WARNING", sorted_warn)
-    
+    # Filter the groups for rare templates
+    rare_groups = []
+    for tid in rare_template_ids:
+        group = df_logs[df_logs['Template ID'] == str(tid)]
+        if not group.empty:
+            rare_groups.append((tid, group))
+            
+    # Reuse the display logic
+    add_section_content(rare_groups)
+
     # Write File
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
