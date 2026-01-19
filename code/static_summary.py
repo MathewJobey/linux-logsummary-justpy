@@ -2,10 +2,10 @@ import pandas as pd
 import textwrap
 import os
 
-def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_map):
+def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_map, ai_summary_text=""):
     """
     Writes the text-based executive summary.
-    Includes 'Rarest Logs' section based on minimum occurrences.
+    Now accepts 'ai_summary_text' to print the BART/Phi-3 generated brief.
     """
     print(f"[SUMMARY] Writing report to {os.path.basename(output_path)}...")
     
@@ -34,13 +34,15 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     unique_ips = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].nunique()
     
     # --- RAREST LOGS LOGIC ---
-    # Find the absolute minimum count in the dataset
     template_counts = df_logs['Template ID'].value_counts()
-    min_occurrence = template_counts.min() if not template_counts.empty else 0
-    
-    # Filter templates that appear exactly `min_occurrence` times
-    rare_template_ids = template_counts[template_counts == min_occurrence].index.tolist()
-    rare_count = len(rare_template_ids)
+    if not template_counts.empty:
+        min_occurrence = template_counts.min()
+        rare_template_ids = template_counts[template_counts == min_occurrence].index.tolist()
+        rare_count = len(rare_template_ids)
+    else:
+        min_occurrence = 0
+        rare_template_ids = []
+        rare_count = 0
 
     # --- Report Structure ---
     lines = [
@@ -48,6 +50,10 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         "             LOG ANALYSIS REPORT",
         "============================================================",
         f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "0. EXECUTIVE BRIEF (AI Generated)",
+        "---------------------------------",
+        textwrap.fill(ai_summary_text, width=80) if ai_summary_text else "[No AI Summary Generated]",
         "",
         "1. EXECUTIVE OVERVIEW",
         "---------------------",
@@ -63,7 +69,7 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         f"🔐 Auth Failures:       {len(auth_fails)}",
         f"⚡ Privilege Activity:  {len(priv_events)} (sudo, su, uid=0)",
         f"✅ Successful Logins:   {len(success_logins)}",
-        f"🔍 Rare Anomalies:      {rare_count} types appeared {min_occurrence} time(s) (Least Frequent)",
+        f"🔍 Rare Anomalies:      {rare_count} log types appeared {min_occurrence} time(s) (Least Frequent)",
         "",
         "3. ACTIVITY ANALYSIS",
         "---------------------",

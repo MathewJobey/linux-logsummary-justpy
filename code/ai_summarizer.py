@@ -1,7 +1,7 @@
 import os
 import torch
-from transformers import pipeline
-
+# CHANGED: Added AutoTokenizer and AutoModelForSeq2SeqLM
+from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
@@ -20,11 +20,12 @@ _SUMMARY_PIPELINE = None
 # ==========================================
 def get_device():
     """Returns 0 for GPU, -1 for CPU."""
-    return 0 if torch.cuda.is_available() else -1
+    # return 0 if torch.cuda.is_available() else -1  <-- Comment this out
+    return -1  # <-- Force CPU
 
 def load_summary_model():
     """
-    Loads the BART model for summarization.
+    Loads the BART model for summarization safely.
     """
     global _SUMMARY_PIPELINE
     if _SUMMARY_PIPELINE is not None:
@@ -34,22 +35,37 @@ def load_summary_model():
     print(f"[AI] Note: This is a large model (1.6GB). First run will take time to download.")
     
     try:
-        # Check hardware
         device = get_device()
         
-        # Initialize pipeline
-        _SUMMARY_PIPELINE = pipeline(
-            "summarization", 
-            model=SUMMARY_MODEL_ID, 
-            device=device,
+        # 1. Load Tokenizer explicitly (Safe place for cache_dir)
+        print("[AI] Loading Tokenizer...")
+        tokenizer = AutoTokenizer.from_pretrained(
+            SUMMARY_MODEL_ID, 
             cache_dir=LOCAL_MODEL_PATH
         )
-        print("[AI] Summary Model Loaded!")
+        
+        # 2. Load Model explicitly (Safe place for cache_dir)
+        print("[AI] Loading Model Weights...")
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            SUMMARY_MODEL_ID, 
+            cache_dir=LOCAL_MODEL_PATH
+        )
+        
+        # 3. Create Pipeline (Clean, no extra args to cause confusion)
+        _SUMMARY_PIPELINE = pipeline(
+            "summarization", 
+            model=model, 
+            tokenizer=tokenizer,
+            device=device
+        )
+        
+        print("[AI] Summary Model Loaded Successfully!")
         return _SUMMARY_PIPELINE
+        
     except Exception as e:
         print(f"[AI] ❌ Error loading summary model: {e}")
         return None
-
+    
 # ==========================================
 # 3. GENERATION FUNCTION
 # ==========================================
