@@ -89,7 +89,8 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         min_occurrence = 0
         rare_template_ids = []
         rare_count = 0
-
+    # Calculate Session List
+    session_list = get_session_analysis(df_logs)
     # --- Report Structure ---
     lines = [
         "============================================================",
@@ -108,7 +109,11 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         f"Unique Source IPs:    {unique_ips} (Distinct machines contacting this server)",
         f"Health Status:        {'⚠️ ATTENTION NEEDED' if crit_count > 0 else '✅ STABLE'}",
         "",
-        "2. SECURITY AUDIT",
+        "2. USER SESSION ACTIVITY",
+        "------------------------",
+        *[f"   • {s}" for s in session_list], # This unpacks the list into lines
+        "",
+        "3. SECURITY AUDIT",
         "---------------------",
         f"🔴 Critical Events:     {crit_count}",
         f"🟠 Warning Events:      {warn_count}",
@@ -117,12 +122,12 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         f"✅ Successful Logins:   {len(success_logins)}",
         f"🔍 Rare Anomalies:      {rare_count} log types appeared {min_occurrence} time(s) (Least Frequent)",
         "",
-        "3. ACTIVITY ANALYSIS",
+        "4. ACTIVITY ANALYSIS",
         "---------------------",
         f"Peak Activity Time:   {peak_str} ({peak_vol} events)",
         f"Avg Event Rate:       {total_events / (total_hours if total_hours > 0 else 1):.1f} events/hour",
         "",
-        "4. CRITICAL BREAKDOWN",
+        "5. CRITICAL BREAKDOWN",
         "---------------------",
         f"Top Services:    {get_top_3_str(df_logs['Service'].value_counts())}",
         f"Top Users:       {get_top_3_str(df_logs[df_logs['USERNAME'] != 'N/A']['USERNAME'].value_counts())}",
@@ -131,7 +136,7 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     ]
 
     # --- 5. RISK EVENT HIGHLIGHTS ---
-    lines.append("5. RISK EVENT HIGHLIGHTS (Strictly Critical/Warning)")
+    lines.append("6. RISK EVENT HIGHLIGHTS (Strictly Critical/Warning)")
     lines.append("--------------------------------------------------")
     
     def add_section_content(group_list):
@@ -184,7 +189,7 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     lines.append("")
 
     # --- 6. RAREST LOG PATTERNS (New Section) ---
-    lines.append(f"6. RAREST LOG PATTERNS (Occurred {min_occurrence} times)")
+    lines.append(f"7. RAREST LOG PATTERNS (Occurred {min_occurrence} times)")
     lines.append("--------------------------------------------------")
     lines.append("These are the least frequent events, often indicating anomalies or outliers.")
     lines.append("")
