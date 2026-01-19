@@ -9,6 +9,52 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     """
     print(f"[SUMMARY] Writing report to {os.path.basename(output_path)}...")
     
+    # --- NEW HELPER: SESSION ANALYSIS ---
+    def get_session_analysis(df):
+        # 1. Label Events
+        def get_event_type(row):
+            tag = str(row.get('Security_Tag', ''))
+            msg = (str(row.get('Meaning Log', '')) + " " + str(row.get('Raw Log', ''))).lower()
+            if 'Successful Login' in tag or 'session opened' in msg or 'accepted password' in msg: return 'LOGIN'
+            if 'session closed' in msg or 'logged out' in msg: return 'LOGOUT'
+            return None
+
+        df = df.copy()
+        df['Event_Type'] = df.apply(get_event_type, axis=1)
+        df = df.dropna(subset=['Event_Type']).sort_values(by='datetime')
+
+        if df.empty: return ["No login/logout activity detected."]
+
+        # 2. Match Pairs
+        user_stacks = {}
+        completed = []
+
+        for _, row in df.iterrows():
+            user = row.get('USERNAME', 'N/A')
+            if user == 'N/A': continue
+            evt, ts = row['Event_Type'], row['datetime']
+
+            if evt == 'LOGIN':
+                if user not in user_stacks: user_stacks[user] = []
+                user_stacks[user].append(ts)
+            elif evt == 'LOGOUT':
+                if user in user_stacks and user_stacks[user]:
+                    start = user_stacks[user].pop()
+                    duration = ts - start
+                    # Format time
+                    s = int(duration.total_seconds())
+                    h, rem = divmod(s, 3600)
+                    m, s = divmod(rem, 60)
+                    dur_str = f"{h}h {m}m" if h > 0 else f"{m}m {s}s"
+                    completed.append(f"User '{user}': Logged in for {dur_str} ({start.strftime('%H:%M')} to {ts.strftime('%H:%M')})")
+
+        # 3. Active Sessions
+        for user, starts in user_stacks.items():
+            for start in starts:
+                completed.append(f"User '{user}': 🟢 Active Session (Since {start.strftime('%H:%M')})")
+
+        return completed[-15:] if completed else ["No complete sessions found."]
+    
     # --- Helper to format top lists ---
     def get_top_3_str(series):
         if series.empty: return "None"
