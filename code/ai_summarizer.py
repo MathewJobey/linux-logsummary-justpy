@@ -1,120 +1,89 @@
 import os
 import torch
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 
 # ==========================================
-# CRITICAL WINDOWS FIX
+# CONFIGURATION
 # ==========================================
-os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
-os.environ["TRANSFORMERS_CACHE"] = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+MODEL_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-
-# ==========================================
-# 1. CONFIGURATION
-# ==========================================
-SUMMARY_MODEL_ID = "facebook/bart-large-cnn"
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-LOCAL_MODEL_PATH = os.path.join(BASE_DIR, "models")
-_SUMMARY_PIPELINE = None
-
-# ==========================================
-# 2. MODEL LOADER
-# ==========================================
-def get_device():
-    """Returns 0 for GPU, -1 for CPU."""
-    return 0 if torch.cuda.is_available() else -1
-
-def load_summary_model():
-    global _SUMMARY_PIPELINE
-    if _SUMMARY_PIPELINE is not None:
-        return _SUMMARY_PIPELINE
-
-    print(f"\n[AI] Loading Summary Model ({SUMMARY_MODEL_ID})...")
-    
-    try:
-        device = get_device()
-        print(f"[AI] Device set to: {'GPU' if device == 0 else 'CPU'}")
-        
-        # 1. Load Tokenizer
-        print("[AI] Loading Tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(
-            SUMMARY_MODEL_ID, 
-            cache_dir=LOCAL_MODEL_PATH,
-            local_files_only=False,
-            model_max_length=1024
-        )
-        
-        # 2. Load Model
-        print("[AI] Loading Model Weights...")
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            SUMMARY_MODEL_ID, 
-            cache_dir=LOCAL_MODEL_PATH,
-            local_files_only=False
-        )
-
-        # 3. Resize Embeddings (Safety Check)
-        if len(tokenizer) > model.config.vocab_size:
-            print(f"[AI] Resizing model embeddings from {model.config.vocab_size} to {len(tokenizer)}...")
-            model.resize_token_embeddings(len(tokenizer))
-        
-        # 4. Create Pipeline
-        _SUMMARY_PIPELINE = pipeline(
-            "summarization", 
-            model=model, 
-            tokenizer=tokenizer,
-            device=device
-        )
-        
-        print("[AI] Summary Model Loaded Successfully!")
-        return _SUMMARY_PIPELINE
-        
-    except Exception as e:
-        print(f"[AI] ❌ Error loading summary model: {e}")
+def generate_ai_summary(report_path):
+    """
+    Reads the full Executive Summary text file and generates a 
+    high-level AI summary using Llama-3.1-8B-Instruct.
+    """
+    if not os.path.exists(report_path):
+        print(f"[AI] Error: Report file not found at {report_path}")
         return None
 
-# ==========================================
-# 3. GENERATION FUNCTION
-# ==========================================
-def generate_summary(context_text):
-    summarizer = load_summary_model()
-    if not summarizer:
-        return "AI Summary unavailable (Model failed to load)."
+    print(f"\n[AI] Initializing Llama-3.1 to summarize: {os.path.basename(report_path)}...")
 
-    # --- FIX: SMART TOKEN TRUNCATION ---
-    # Instead of blindly cutting at 3000 chars, we tokenize first to fit 
-    # exactly 1024 tokens. This maximizes context without crashing.
+    # 1. Read the Executive Summary
     try:
-        tokenizer = summarizer.tokenizer
-        
-        # 1. Convert text to tokens
-        inputs = tokenizer(context_text, return_tensors="pt", truncation=False)
-        input_ids = inputs["input_ids"]
-        
-        # 2. Check length
-        curr_len = input_ids.shape[1]
-        max_allowed = 1024  # BART's hard limit
-        
-        if curr_len > max_allowed:
-            print(f"[AI] Input too long ({curr_len} tokens). Smart truncating to {max_allowed} tokens...")
-            # Slice the tokens, not the characters
-            input_ids = input_ids[:, :max_allowed]
-            # Decode back to text (ignores special characters to prevent errors)
-            context_text = tokenizer.decode(input_ids[0], skip_special_tokens=True)
-        
-        print("[AI] Generating Executive Brief using BART...")
-        
-        # 3. Generate with "Human-Readable" parameters
-        output = summarizer(
-            context_text, 
-            max_length=450,       # Allow longer summary
-            min_length=150,       # FORCE it to write at least a paragraph
-            length_penalty=2.0,   # Encourages detailed sentences
-            no_repeat_ngram_size=3, # Prevents robotic repetition
-            do_sample=False,      # Keep it factual
-            truncation=True
-        )
-        return output[0]['summary_text'].strip()
-        
+        with open(report_path, "r", encoding="utf-8") as f:
+            report_content = f.read()
     except Exception as e:
-        print(f"[AI] Summarization failed: {e}")
-        return "Error generating summary."
+        print(f"[AI] Failed to read report: {e}")
+        return None
+
+    # 2. Setup Output Path
+    base_dir = os.path.dirname(report_path)
+    output_path = os.path.join(base_dir, "ai_summary.txt")
+
+    try:
+        # 3. Load Model
+        # device_map="auto" will automatically use GPU if available
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_ID,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            device_map="auto"
+        )
+
+        pipe = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+        )
+
+        # 4. Construct Prompt (Llama 3 Instruct Format)
+        system_msg = (
+            "You are a Cybersecurity Expert. "
+            "Read the following log analysis report and write a concise Summary about the LOG ANALYSIS REPORT."
+            "Focus on all the sections of the report and dont miss any important details. "
+            "Do not simply repeat the metrics; analyze them."
+        )
+
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": f"Here is the detailed report:\n\n{report_content}"}
+        ]
+
+        terminators = [
+            pipe.tokenizer.eos_token_id,
+            pipe.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        ]
+
+        # 5. Generate
+        print("[AI] Generating summary (this may take a moment)...")
+        outputs = pipe(
+            messages,
+            max_new_tokens=1024, # Default length limit
+            eos_token_id=terminators,
+            do_sample=True,
+            temperature=0.6,
+            top_p=0.9,
+        )
+
+        summary_text = outputs[0]["generated_text"][-1]["content"]
+
+        # 6. Save Output
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(summary_text)
+        
+        print(f"[AI] ✅ Summary generated and saved to: {os.path.basename(output_path)}")
+        return output_path
+
+    except Exception as e:
+        print(f"[AI] ❌ Generation failed: {e}")
+        return None
