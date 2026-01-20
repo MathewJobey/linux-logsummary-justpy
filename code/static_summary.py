@@ -4,18 +4,54 @@ import os
 
 def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_map, ai_summary_text="", threat_df=None):
     """
-    Writes the text-based executive summary.
-    - NO AI Summary at the top.
-    - NO Deduplication (Shows all login events).
-    - Includes Robust Threat Intelligence (Handles IP+Domain).
-    - Triggered time displayed as full Datetime.
+    Writes a Markdown-formatted executive summary with PERFECTLY ALIGNED tables.
+    - Uses dynamic width calculation so columns never zigzag.
+    - Includes full User Session analysis and Threat Intelligence.
     """
-    print(f"[SUMMARY] Writing report to {os.path.basename(output_path)}...")
-    
+    print(f"[SUMMARY] Writing grid-aligned report to {os.path.basename(output_path)}...")
+
     # ==========================================
-    # 1. HELPER FUNCTIONS
+    # 1. HELPER: DYNAMIC TABLE FORMATTER
     # ==========================================
-    
+    def format_table(headers, rows):
+        """
+        Takes headers (list) and rows (list of lists).
+        Returns a list of strings representing a perfectly aligned Markdown table.
+        """
+        if not rows:
+            return []
+            
+        # 1. Calculate max width for each column
+        col_widths = [len(h) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row):
+                width = len(str(cell))
+                if width > col_widths[i]:
+                    col_widths[i] = width
+
+        # 2. Add a buffer (2 spaces) for readability
+        col_widths = [w + 2 for w in col_widths]
+
+        # 3. Create format string (e.g., "| {:<20} | {:<10} |")
+        row_fmt = "| " + " | ".join([f"{{:<{w}}}" for w in col_widths]) + " |"
+        
+        # 4. Build the table parts
+        lines = []
+        lines.append(row_fmt.format(*headers))
+        
+        # Separator (e.g., "| :------------------- | :--------- |")
+        separator = "| " + " | ".join([f":{'-' * (w-1)}" for w in col_widths]) + " |"
+        lines.append(separator)
+        
+        # Data Rows
+        for row in rows:
+            lines.append(row_fmt.format(*[str(r) for r in row]))
+            
+        return lines
+
+    # ==========================================
+    # 2. HELPER: ANALYSIS FUNCTIONS
+    # ==========================================
     def get_session_analysis(df):
         # Label Events
         def get_event_type(row):
@@ -29,9 +65,8 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         df['Event_Type'] = df.apply(get_event_type, axis=1)
         df = df.dropna(subset=['Event_Type']).sort_values(by='datetime')
 
-        if df.empty: return ["No login/logout activity detected."]
+        if df.empty: return ["- No login/logout activity detected."]
 
-        # Match Pairs (No Deduplication)
         user_stacks = {}
         completed = []
 
@@ -55,14 +90,14 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
                     elif m > 0: dur_str = f"{m}m {s}s"
                     else: dur_str = f"{s}s"
                     
-                    completed.append(f"User '{user}': Logged in for {dur_str} ({start.strftime('%Y-%m-%d %H:%M')} to {ts.strftime('%Y-%m-%d %H:%M')})")
+                    completed.append(f"- **User '{user}'**: Logged in for {dur_str} ({start.strftime('%Y-%m-%d %H:%M')} to {ts.strftime('%Y-%m-%d %H:%M')})")
 
         # Active Sessions
         for user, starts in user_stacks.items():
             for start in starts:
-                completed.append(f"User '{user}': 🟢 Active Session (Since {start.strftime('%Y-%m-%d %H:%M')})")
+                completed.append(f"- **User '{user}'**: 🟢 Active Session (Since {start.strftime('%Y-%m-%d %H:%M')})")
 
-        return completed[-15:] if completed else ["No complete sessions found."]
+        return completed[-15:] if completed else ["- No complete sessions found."]
     
     def get_top_3_str(series):
         if series.empty: return "None"
@@ -70,116 +105,15 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         total = len(df_logs)
         for name, count in series.head(3).items():
             pct = (count / total) * 100
-            items.append(f"{name} ({count}, {pct:.1f}%)")
+            items.append(f"`{name}` ({count}, {pct:.1f}%)")
         return "; ".join(items)
 
-    # ==========================================
-    # 2. METRICS
-    # ==========================================
-    total_events = len(df_logs)
-    sev_counts = df_logs['Severity'].value_counts()
-    crit_count = sev_counts.get('CRITICAL', 0)
-    warn_count = sev_counts.get('WARNING', 0)
-    
-    priv_events = df_logs[df_logs['Security_Tag'].str.contains('Privilege Activity', na=False)]
-    auth_fails = df_logs[df_logs['Security_Tag'].str.contains('Auth Failure', na=False)]
-    success_logins = df_logs[df_logs['Security_Tag'].str.contains('Successful Login', na=False)]
-    unique_ips = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].nunique()
-    
-    template_counts = df_logs['Template ID'].value_counts()
-    if not template_counts.empty:
-        min_occurrence = template_counts.min()
-        rare_template_ids = template_counts[template_counts == min_occurrence].index.tolist()
-        rare_count = len(rare_template_ids)
-    else:
-        min_occurrence = 0
-        rare_template_ids = []
-        rare_count = 0
-        
-    session_list = get_session_analysis(df_logs)
-
-    # ==========================================
-    # 3. BUILD REPORT
-    # ==========================================
-    lines = [
-        "============================================================",
-        "             LOG ANALYSIS REPORT",
-        "============================================================",
-        f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}",
-        "",
-        "1. EXECUTIVE OVERVIEW",
-        "---------------------",
-        f"Analysis Period:      {min_time.strftime('%Y-%b-%d %H:%M')} to {max_time.strftime('%Y-%b-%d %H:%M')}",
-        f"Total Log Entries:    {total_events}",
-        f"Unique Source IPs:    {unique_ips} (Distinct machines contacting this server)",
-        f"Health Status:        {'⚠️ ATTENTION NEEDED' if crit_count > 0 else '✅ STABLE'}",
-        "",
-        "2. USER SESSION ACTIVITY",
-        "------------------------",
-        *[f"   • {s}" for s in session_list], 
-        "",
-        "3. SECURITY AUDIT",
-        "---------------------",
-        f"🔴 Critical Events:     {crit_count}",
-        f"🟠 Warning Events:      {warn_count}",
-        f"🔐 Auth Failures:       {len(auth_fails)}",
-        f"⚡ Privilege Activity:  {len(priv_events)} (sudo, su, uid=0)",
-        f"✅ Successful Logins:   {len(success_logins)}",
-        f"🔍 Rare Anomalies:      {rare_count} log types appeared {min_occurrence} time(s) (Least Frequent)",
-        "",
-        "4. ACTIVITY ANALYSIS",
-        "---------------------",
-        f"Peak Activity Time:   {peak_str} ({peak_vol} events)",
-        f"Avg Event Rate:       {total_events / (total_hours if total_hours > 0 else 1):.1f} events/hour",
-        ""
-    ]
-
-    # ==========================================
-    # 4. APPEND THREAT INTELLIGENCE (SECTION 5)
-    # ==========================================
-    lines.append("5. THREAT INTELLIGENCE (Fail2Ban Simulation)")
-    lines.append("--------------------------------------------------")
-    lines.append("Logic: >5 failures within any 10-minute sliding window.")
-    lines.append("")
-
-    if threat_df is not None and not threat_df.empty:
-        threat_df = threat_df.sort_values('Max_Burst_Rate', ascending=False)
-        for _, row in threat_df.iterrows():
-            host = row['Target_Host'] 
-            # --- FIX: Display as full Datetime (%Y-%m-%d %H:%M:%S) ---
-            time = row['Ban_Triggered_At'].strftime('%Y-%m-%d %H:%M:%S')
-            burst = row['Max_Burst_Rate']
-            total = row['Total_Failures']
-            
-            lines.append(f"   [🚩 BANNABLE] Host/IP: {host}")
-            lines.append(f"      • Triggered At: {time}")
-            lines.append(f"      • Burst Rate:   {burst} failures / 10min")
-            lines.append(f"      • Total Count:  {total} failures in full log")
-            lines.append("")
-    else:
-        lines.append("   ✅ No IPs triggered the ban threshold.")
-        lines.append("")
-
-    # ==========================================
-    # 5. REST OF REPORT
-    # ==========================================
-    lines.extend([
-        "6. CRITICAL BREAKDOWN",
-        "---------------------",
-        f"Top Services:    {get_top_3_str(df_logs['Service'].value_counts())}",
-        f"Top Users:       {get_top_3_str(df_logs[df_logs['USERNAME'] != 'N/A']['USERNAME'].value_counts())}",
-        f"Top IPs:         {get_top_3_str(df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].value_counts())}",
-        ""
-    ])
-
-    lines.append("7. RISK EVENT HIGHLIGHTS (Strictly Critical/Warning)")
-    lines.append("--------------------------------------------------")
-    
-    def add_section_content(group_list):
+    def add_risk_content(lines_list, group_list, severity_label):
         if not group_list:
-            lines.append("✅ None found.")
+            lines_list.append(f"> ✅ No {severity_label} events.")
             return
 
+        lines_list.append(f"### {severity_label} Events Details")
         for tid, group in group_list:
             if group.empty: continue
             count = len(group)
@@ -197,43 +131,122 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
                 meaning_content = generic_map.get(str(tid), str(row['Meaning Log'])).strip()
                 label = "TEMPLATE"
 
-            lines.append(f"   [Count: {count}] Template {tid}")
-            lines.append(f"   {label}:    {textwrap.fill(log_content, width=100, subsequent_indent='            ')}")
-            lines.append(f"   MEANING: {textwrap.fill(meaning_content, width=100, subsequent_indent='            ')}")
-            lines.append("")
+            lines_list.append(f"### Template ID: {tid} (Count: {count})")
+            lines_list.append(f"- **{label}**: `{log_content}`")
+            lines_list.append(f"- **Meaning**: {meaning_content}")
+            lines_list.append("")
 
-    if crit_count > 0:
-        lines.append(f"🔴 CRITICAL EVENTS:")
-        crit_groups = df_logs[df_logs['Severity'] == 'CRITICAL'].groupby('Template ID')
-        sorted_crit = sorted(crit_groups, key=lambda x: len(x[1]), reverse=True)
-        add_section_content(sorted_crit)
-    else:
-        lines.append("✅ No Critical events found.")
+    # ==========================================
+    # 3. PREPARE METRICS
+    # ==========================================
+    total_events = len(df_logs)
+    sev_counts = df_logs['Severity'].value_counts()
+    crit_count = sev_counts.get('CRITICAL', 0)
+    warn_count = sev_counts.get('WARNING', 0)
     
+    priv_events = df_logs[df_logs['Security_Tag'].str.contains('Privilege Activity', na=False)]
+    auth_fails = df_logs[df_logs['Security_Tag'].str.contains('Auth Failure', na=False)]
+    success_logins = df_logs[df_logs['Security_Tag'].str.contains('Successful Login', na=False)]
+    unique_ips = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].nunique()
+    
+    template_counts = df_logs['Template ID'].value_counts()
+    if not template_counts.empty:
+        min_occurrence = template_counts.min()
+        rare_template_ids = template_counts[template_counts == min_occurrence].index.tolist()
+        rare_count = len(rare_template_ids)
+    else:
+        min_occurrence, rare_template_ids, rare_count = 0, [], 0
+        
+    session_list = get_session_analysis(df_logs)
+    avg_rate = total_events / (total_hours if total_hours > 0 else 1)
+
+    # ==========================================
+    # 4. BUILD REPORT STRUCTURE
+    # ==========================================
+    lines = []
+    lines.append(f"# Log Analysis Report: {pd.Timestamp.now().strftime('%Y-%m-%d')}")
     lines.append("")
+    
+    # --- 1. Executive Overview ---
+    lines.append("## 1. Executive Overview")
+    lines.append(f"- **Analysis Period:** {min_time.strftime('%Y-%m-%d %H:%M')} to {max_time.strftime('%Y-%m-%d %H:%M')}")
+    lines.append(f"- **Health Status:** {'⚠️ CRITICAL' if crit_count > 0 else '✅ STABLE'}")
+    lines.append(f"- **Total Events:** {total_events}")
+    lines.append(f"- **Unique IPs:** {unique_ips}")
+    lines.append(f"- **Peak Activity:** {peak_str} ({peak_vol} events)")
+    lines.append(f"- **Avg Rate:** {avg_rate:.1f} events/hour")
+    lines.append("")
+
+    # --- 2. Security Audit (Dynamic Table) ---
+    lines.append("## 2. Security Audit Metrics")
+    sec_headers = ["Metric", "Count"]
+    sec_rows = [
+        ["🔴 Critical Events", crit_count],
+        ["🟠 Warning Events", warn_count],
+        ["🔐 Auth Failures", len(auth_fails)],
+        ["⚡ Privilege Activity", len(priv_events)],
+        ["✅ Successful Logins", len(success_logins)],
+        ["🔍 Rare Anomalies", rare_count]
+    ]
+    lines.extend(format_table(sec_headers, sec_rows))
+    lines.append("")
+
+    # --- 3. Risk Event Highlights ---
+    lines.append("## 3. Risk Event Highlights")
+    if crit_count > 0:
+        crit_groups = sorted(df_logs[df_logs['Severity'] == 'CRITICAL'].groupby('Template ID'), key=lambda x: len(x[1]), reverse=True)
+        add_risk_content(lines, crit_groups, "🔴 Critical")
+    else:
+        lines.append("> ✅ No Critical events.")
 
     if warn_count > 0:
-        lines.append(f"🟠 WARNING EVENTS:")
-        warn_groups = df_logs[df_logs['Severity'] == 'WARNING'].groupby('Template ID')
-        sorted_warn = sorted(warn_groups, key=lambda x: len(x[1]), reverse=True)
-        add_section_content(sorted_warn)
+        warn_groups = sorted(df_logs[df_logs['Severity'] == 'WARNING'].groupby('Template ID'), key=lambda x: len(x[1]), reverse=True)
+        add_risk_content(lines, warn_groups, "🟠 Warning")
     else:
-        lines.append("✅ No Warning events found.")
-
+        lines.append("> ✅ No Warning events.")
     lines.append("")
 
-    lines.append(f"8. RAREST LOG PATTERNS (Occurred {min_occurrence} times)")
-    lines.append("--------------------------------------------------")
-    lines.append("These are the least frequent events, often indicating anomalies or outliers.")
+    # --- 4. Threat Intelligence (Dynamic Table) ---
+    lines.append("## 4. Threat Intelligence (Fail2Ban Candidates)")
+    if threat_df is not None and not threat_df.empty:
+        threat_df = threat_df.sort_values('Max_Burst_Rate', ascending=False)
+        threat_headers = ["Host", "Trigger Time", "Burst/10min", "Total Failures"]
+        threat_rows = []
+        
+        for _, row in threat_df.iterrows():
+            threat_rows.append([
+                str(row['Target_Host']),
+                row['Ban_Triggered_At'].strftime('%Y-%m-%d %H:%M:%S'),
+                f"{row['Max_Burst_Rate']}",
+                f"{row['Total_Failures']}"
+            ])
+            
+        lines.extend(format_table(threat_headers, threat_rows))
+    else:
+        lines.append("> ✅ No automated attacks detected.")
     lines.append("")
-    
+
+    # --- 5. User Session Activity ---
+    lines.append("## 5. User Session Activity")
+    lines.extend(session_list)
+    lines.append("")
+
+    # --- 6. Rare Patterns ---
+    lines.append(f"## 6. Rare Log Patterns (Occurred {min_occurrence} times)")
     rare_groups = []
     for tid in rare_template_ids:
         group = df_logs[df_logs['Template ID'] == str(tid)]
         if not group.empty:
             rare_groups.append((tid, group))
             
-    add_section_content(rare_groups)
+    add_risk_content(lines, rare_groups, "🔍 Rare")
+    lines.append("")
+
+    # --- 7. Critical Breakdown ---
+    lines.append("## 7. Critical Breakdown")
+    lines.append(f"- **Top Services:** {get_top_3_str(df_logs['Service'].value_counts())}")
+    lines.append(f"- **Top Users:** {get_top_3_str(df_logs[df_logs['USERNAME'] != 'N/A']['USERNAME'].value_counts())}")
+    lines.append(f"- **Top IPs:** {get_top_3_str(df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].value_counts())}")
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
