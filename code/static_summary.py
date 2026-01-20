@@ -2,16 +2,20 @@ import pandas as pd
 import textwrap
 import os
 
-def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_map, ai_summary_text=""):
+def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_map, ai_summary_text="", threat_df=None):
     """
     Writes the text-based executive summary.
     Now accepts 'ai_summary_text' to print the BART/Phi-3 generated brief.
+    Includes Fail2Ban logic simulation.
     """
     print(f"[SUMMARY] Writing report to {os.path.basename(output_path)}...")
     
-    # --- NEW HELPER: SESSION ANALYSIS ---
+    # ==========================================
+    # 1. HELPER FUNCTIONS
+    # ==========================================
+    
     def get_session_analysis(df):
-        # 1. Label Events
+        # Label Events
         def get_event_type(row):
             tag = str(row.get('Security_Tag', ''))
             msg = (str(row.get('Meaning Log', '')) + " " + str(row.get('Raw Log', ''))).lower()
@@ -25,7 +29,7 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
 
         if df.empty: return ["No login/logout activity detected."]
 
-        # 2. Match Pairs
+        # Match Pairs
         user_stacks = {}
         completed = []
 
@@ -46,16 +50,18 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
                     h, rem = divmod(s, 3600)
                     m, s = divmod(rem, 60)
                     dur_str = f"{h}h {m}m" if h > 0 else f"{m}m {s}s"
-                    completed.append(f"User '{user}': Logged in for {dur_str} ({start.strftime('%H:%M')} to {ts.strftime('%H:%M')})")
+                    
+                    # --- EDITED HERE: Changed formatting to %Y-%m-%d %H:%M ---
+                    completed.append(f"User '{user}': Logged in for {dur_str} ({start.strftime('%Y-%m-%d %H:%M')} to {ts.strftime('%Y-%m-%d %H:%M')})")
 
-        # 3. Active Sessions
+        # Active Sessions
         for user, starts in user_stacks.items():
             for start in starts:
-                completed.append(f"User '{user}': 🟢 Active Session (Since {start.strftime('%H:%M')})")
+                # --- EDITED HERE: Changed formatting to %Y-%m-%d %H:%M ---
+                completed.append(f"User '{user}': 🟢 Active Session (Since {start.strftime('%Y-%m-%d %H:%M')})")
 
         return completed[-15:] if completed else ["No complete sessions found."]
     
-    # --- Helper to format top lists ---
     def get_top_3_str(series):
         if series.empty: return "None"
         items = []
@@ -65,7 +71,9 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
             items.append(f"{name} ({count}, {pct:.1f}%)")
         return "; ".join(items)
 
-    # --- Metrics Calculation ---
+    # ==========================================
+    # 2. METRICS CALCULATION
+    # ==========================================
     total_events = len(df_logs)
     sev_counts = df_logs['Severity'].value_counts()
     crit_count = sev_counts.get('CRITICAL', 0)
@@ -76,10 +84,10 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     auth_fails = df_logs[df_logs['Security_Tag'].str.contains('Auth Failure', na=False)]
     success_logins = df_logs[df_logs['Security_Tag'].str.contains('Successful Login', na=False)]
     
-    # Security Analyst Insight: Unique IPs
+    # Unique IPs
     unique_ips = df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].nunique()
     
-    # --- RAREST LOGS LOGIC ---
+    # Rarest Logs Logic
     template_counts = df_logs['Template ID'].value_counts()
     if not template_counts.empty:
         min_occurrence = template_counts.min()
@@ -89,9 +97,12 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         min_occurrence = 0
         rare_template_ids = []
         rare_count = 0
-    # Calculate Session List
+        
     session_list = get_session_analysis(df_logs)
-    # --- Report Structure ---
+
+    # ==========================================
+    # 3. BUILD REPORT (SECTIONS 0-4)
+    # ==========================================
     lines = [
         "============================================================",
         "             LOG ANALYSIS REPORT",
@@ -111,7 +122,7 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         "",
         "2. USER SESSION ACTIVITY",
         "------------------------",
-        *[f"   • {s}" for s in session_list], # This unpacks the list into lines
+        *[f"   • {s}" for s in session_list], 
         "",
         "3. SECURITY AUDIT",
         "---------------------",
@@ -126,17 +137,52 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
         "---------------------",
         f"Peak Activity Time:   {peak_str} ({peak_vol} events)",
         f"Avg Event Rate:       {total_events / (total_hours if total_hours > 0 else 1):.1f} events/hour",
-        "",
-        "5. CRITICAL BREAKDOWN",
+        ""
+    ]
+
+    # ==========================================
+    # 4. APPEND THREAT INTELLIGENCE (SECTION 5)
+    # ==========================================
+    lines.append("5. THREAT INTELLIGENCE (Fail2Ban Simulation)")
+    lines.append("--------------------------------------------------")
+    lines.append("Logic: >5 failures within any 10-minute sliding window.")
+    lines.append("")
+
+    if threat_df is not None and not threat_df.empty:
+        # Sort by Max Burst to show worst offenders first
+        threat_df = threat_df.sort_values('Max_Burst_Rate', ascending=False)
+        
+        for _, row in threat_df.iterrows():
+            ip = row['Target_IP']
+            time = row['Ban_Triggered_At'].strftime('%H:%M:%S')
+            burst = row['Max_Burst_Rate']
+            total = row['Total_Failures']
+            
+            lines.append(f"   [🚩 BANNABLE] IP: {ip}")
+            lines.append(f"      • Triggered At: {time}")
+            lines.append(f"      • Burst Rate:   {burst} failures / 10min")
+            lines.append(f"      • Total Count:  {total} failures in full log")
+            lines.append("")
+    else:
+        lines.append("   ✅ No IPs triggered the ban threshold.")
+        lines.append("")
+
+    # ==========================================
+    # 5. APPEND CRITICAL BREAKDOWN (SECTION 6)
+    # ==========================================
+    lines.extend([
+        "6. CRITICAL BREAKDOWN",
         "---------------------",
         f"Top Services:    {get_top_3_str(df_logs['Service'].value_counts())}",
         f"Top Users:       {get_top_3_str(df_logs[df_logs['USERNAME'] != 'N/A']['USERNAME'].value_counts())}",
         f"Top IPs:         {get_top_3_str(df_logs[df_logs['RHOST'] != 'N/A']['RHOST'].value_counts())}",
         ""
-    ]
+    ])
 
-    # --- 5. RISK EVENT HIGHLIGHTS ---
-    lines.append("6. RISK EVENT HIGHLIGHTS (Strictly Critical/Warning)")
+    # ==========================================
+    # 6. APPEND RISK HIGHLIGHTS (SECTION 7)
+    # ==========================================
+    lines.append("7. RISK EVENT HIGHLIGHTS (Strictly Critical/Warning)")
     lines.append("--------------------------------------------------")
     
     def add_section_content(group_list):
@@ -188,8 +234,10 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
 
     lines.append("")
 
-    # --- 6. RAREST LOG PATTERNS (New Section) ---
-    lines.append(f"7. RAREST LOG PATTERNS (Occurred {min_occurrence} times)")
+    # ==========================================
+    # 7. APPEND RAREST LOGS (SECTION 8)
+    # ==========================================
+    lines.append(f"8. RAREST LOG PATTERNS (Occurred {min_occurrence} times)")
     lines.append("--------------------------------------------------")
     lines.append("These are the least frequent events, often indicating anomalies or outliers.")
     lines.append("")
@@ -204,6 +252,8 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     # Reuse the display logic
     add_section_content(rare_groups)
 
-    # Write File
+    # ==========================================
+    # 8. WRITE FILE
+    # ==========================================
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
