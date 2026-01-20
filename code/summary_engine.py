@@ -7,15 +7,14 @@ from dateutil import parser
 # --- IMPORTS FROM NEW MODULES ---
 from graph_generator import create_all_charts
 from static_summary import write_executive_summary
-from ai_summarizer import generate_summary
-from fail2ban_logic import scan_threats  # <--- NEW
+from fail2ban_logic import scan_threats
+from ai_summarizer import generate_ai_summary  # <--- NEW IMPORT
 
 # ==========================================
 # PART 1: SENTENCE CONSTRUCTION
 # ==========================================
 
 def fill_meaning_from_json(row, meaning_map):
-    # Ensure ID is string to match the map keys
     template_id = str(row.get('Template ID', ''))
     params_json = row.get('Parameters')
     meaning_template = meaning_map.get(template_id)
@@ -193,11 +192,6 @@ def step_3_generate_report(file_path):
     duration = max_time - min_time
     total_hours = duration.total_seconds() / 3600
 
-    # ---------------------------------------------------------
-    # REMOVED: Map-Reduce AI Input Preparation
-    # REMOVED: AI Generation Call (generate_summary)
-    # ---------------------------------------------------------
-
     # 4. Graph Settings
     if total_hours < 4:
         resample_rule = '1T'; date_format = '%H:%M'; xlabel_text = "Time (HH:MM)"; time_unit = "Minute"
@@ -216,8 +210,11 @@ def step_3_generate_report(file_path):
         print(f"[WARN] Threat scanning failed: {e}")
         threat_df = None
 
-    # 7. Generate Main Report
-    # We pass an empty string "" for the AI summary so it doesn't break function signature
-    write_executive_summary(df_logs, report_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_meaning_map, threat_df=threat_df)
+    # 7. Generate Main Report (Static)
+    write_executive_summary(df_logs, report_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_meaning_map, ai_summary_text="", threat_df=threat_df)
     
+    # 8. Generate AI Summary (Post-Processing)
+    # This reads the report generated in Step 7 and summarizes it.
+    generate_ai_summary(report_path)
+
     return report_path
