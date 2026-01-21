@@ -13,8 +13,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
 from meaning_generator import generate_meanings_for_file
-from summary_engine import step_1_merge_sentences, step_2_sort_logs, step_3_generate_report
+from report_engine import step_1_merge_sentences, step_2_sort_logs, step_3_generate_report
 from image_handler import get_b64_image, setup_lightbox
+from markdown_handler import render_markdown_report
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -138,10 +139,10 @@ def app():
     jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
 
     # =========================================================
-    # STEP 4: EXECUTIVE SUMMARY (New)
+    # STEP 4: Analytics & Report (New)
     # =========================================================
     card4 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8")
-    jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+    jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
     jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
 
     # =========================================================
@@ -386,7 +387,7 @@ def app():
         # --- RESET STEP 4 ---
         card4.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
         card4.delete_components()
-        jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+        jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
         jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
         
         # --- CONNECT THE PARSER BUTTON ---
@@ -649,16 +650,16 @@ def app():
             # ========================================================
             card4.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 transition-all duration-500 mt-8"
             card4.delete_components()
-            jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
             jp.Div(text="Ready to compile the final executive report.", a=card4, classes="text-green-600 font-medium mb-4")
             
-            # Create the Summary Button
-            btn_summary = jp.Button(text="CREATE SUMMARY", a=card4, 
+            # Create the Report Button
+            btn_report = jp.Button(text="CREATE REPORT", a=card4, 
                                     classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
             
             # Connect the handler
-            btn_summary.on('click', run_report_generation)
+            btn_report.on('click', run_report_generation)
 
         except Exception as e:
             print(f"[ERROR] Meaning Generation failed: {e}")
@@ -674,10 +675,10 @@ def app():
             jp.Div(text=f"❌ Error: {str(e)}", a=card3, classes="text-red-600 font-bold mt-2")  
             
     # ------------------------------------------------------------------
-    # 5. STEP 4: SUMMARY GENERATION LOGIC
+    # 5. STEP 4: ANALYTICS & REPORT GENERATION LOGIC
     # ------------------------------------------------------------------
     async def run_report_generation(self, msg):
-        print("------ [REPORT] ------")
+        print("------ [LOG REPORT] ------")
         
         # --- UI UPDATE: SPINNER ---
         self.disabled = True
@@ -744,12 +745,12 @@ def app():
             card4.delete_components()
             
             # Re-add Header
-            jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
             # Display Verification Results (No Button)
             result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-6 rounded-lg text-sm text-green-900 font-mono shadow-sm")
             result_box.inner_html = f"""
-            <div class="text-green-800 font-bold text-lg mb-2">✅ Analytics & Report Complete</div>
+            <div class="text-green-800 font-bold text-lg mb-2">✅ Log Analytics & Report Created</div>
             <div class="ml-2 text-green-700">
                 Merged parameters to event meanings and then sorted the logs.<br>
                 Full detailed report with charts have been generated.
@@ -786,7 +787,7 @@ def app():
             analytics_header = jp.Div(a=analytics_wrap, classes="p-3 bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100 transition select-none")
             
             # Title Text (Matches "text-sm" from previous cards)
-            jp.Span(text="📊 View Visual Analytics Charts", a=analytics_header, classes="font-bold text-slate-700 text-sm")
+            jp.Span(text="📊 View Analytics", a=analytics_header, classes="font-bold text-slate-700 text-sm")
             toggle_icon_charts = jp.Span(text="▼", a=analytics_header, classes="text-xs text-gray-500")
             
             # 3. Content Area (Hidden by default)
@@ -842,7 +843,35 @@ def app():
             
             analytics_header.on('click', toggle_analytics)
             
-            # --- [END NEW CODE] ---
+            # ========================================================
+            # NEW: COLLAPSIBLE FULL REPORT (Clean & Modular)
+            # ========================================================
+            
+            # 1. Main Container
+            report_wrap = jp.Div(a=card4, classes="border rounded shadow-sm bg-white mt-4 overflow-hidden")
+            
+            # 2. Header
+            report_header = jp.Div(a=report_wrap, classes="p-3 bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100 transition select-none")
+            jp.Span(text="📄 View Detailed Log Report", a=report_header, classes="font-bold text-slate-700 text-sm")
+            toggle_icon_report = jp.Span(text="▼", a=report_header, classes="text-xs text-gray-500")
+            
+            # 3. Content Area
+            report_content = jp.Div(a=report_wrap, classes="hidden p-8 bg-white border-t text-sm text-slate-800 overflow-auto max-h-screen leading-relaxed")
+            
+            # 4. Render Markdown using our new module
+            # This one line replaces the 20 lines of CSS/HTML logic we had before
+            report_content.inner_html = render_markdown_report(report_path)
+
+            # 5. Toggle Logic
+            def toggle_report(self, msg):
+                if "hidden" in report_content.classes:
+                    report_content.classes = report_content.classes.replace("hidden", "")
+                    toggle_icon_report.text = "▲"
+                else:
+                    report_content.classes = f"{report_content.classes} hidden"
+                    toggle_icon_report.text = "▼"
+            
+            report_header.on('click', toggle_report)
                         
         except Exception as e:
             print(f"[ERROR] Report failed: {e}")
