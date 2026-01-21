@@ -14,7 +14,7 @@ from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
 from meaning_generator import generate_meanings_for_file
 from summary_engine import step_1_merge_sentences, step_2_sort_logs, step_3_generate_report
-from image_handler import get_b64_image
+from image_handler import get_b64_image, setup_lightbox
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -67,6 +67,8 @@ def create_active_accordion(parent, title, items):
 def app():
     
     wp = jp.WebPage(title="Linux Log Summarizer", classes="bg-gray-100 min-h-screen")
+    # Initialize the lightbox components
+    lightbox, lightbox_img = setup_lightbox(wp)
     layout = jp.Div(a=wp, classes="max-w-4xl mx-auto p-8 font-sans text-slate-800")
     
     # --- CRITICAL FIX: State is now created NEW every time page loads ---
@@ -656,7 +658,7 @@ def app():
                                     classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
             
             # Connect the handler
-            btn_summary.on('click', run_summary_generation)
+            btn_summary.on('click', run_report_generation)
 
         except Exception as e:
             print(f"[ERROR] Meaning Generation failed: {e}")
@@ -674,7 +676,7 @@ def app():
     # ------------------------------------------------------------------
     # 5. STEP 4: SUMMARY GENERATION LOGIC
     # ------------------------------------------------------------------
-    async def run_summary_generation(self, msg):
+    async def run_report_generation(self, msg):
         print("------ [REPORT] ------")
         
         # --- UI UPDATE: SPINNER ---
@@ -773,40 +775,75 @@ def app():
                 "5_top_ips.png"
             ]
 
-            # 2. Section Header
-            jp.Div(text="📊 Visual Analytics", a=card4, classes="text-lg font-bold mt-8 mb-4 text-slate-700 border-b pb-1")
+            # ========================================================
+            # NEW: COLLAPSIBLE VISUAL ANALYTICS (Matches Previous Style)
+            # ========================================================
             
-            # 3. Responsive Grid (1 column mobile, 2 columns desktop)
-            gallery_grid = jp.Div(a=card4, classes="grid grid-cols-1 md:grid-cols-2 gap-4")
-
-            # 4. Loop & Display
+            # 1. Main Container (Matches Step 2/3 wrappers)
+            analytics_wrap = jp.Div(a=card4, classes="border rounded shadow-sm bg-white mt-4 overflow-hidden")
+            
+            # 2. Header (Clickable - Matches previous headers exactly)
+            analytics_header = jp.Div(a=analytics_wrap, classes="p-3 bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100 transition select-none")
+            
+            # Title Text (Matches "text-sm" from previous cards)
+            jp.Span(text="📊 View Visual Analytics Charts", a=analytics_header, classes="font-bold text-slate-700 text-sm")
+            toggle_icon_charts = jp.Span(text="▼", a=analytics_header, classes="text-xs text-gray-500")
+            
+            # 3. Content Area (Hidden by default)
+            # Added "border-t" to separate header from content, just like the tables
+            analytics_content = jp.Div(a=analytics_wrap, classes="hidden p-4 bg-gray-50 grid grid-cols-1 gap-4 border-t")
+            
+            # 4. Loop & Display Images
             charts_found = 0
             for chart_name in expected_charts:
                 chart_path = os.path.join(logs_dir, chart_name)
                 
-                # Use our new function from image_handler.py
+                # Get Base64
                 img_src = get_b64_image(chart_path)
                 
                 if img_src:
                     charts_found += 1
-                    # Card Container
-                    img_card = jp.Div(a=gallery_grid, classes="bg-white p-2 rounded-lg shadow border border-gray-200 hover:shadow-md transition-all")
+                    # Image Container
+                    img_card = jp.Div(a=analytics_content, classes="bg-white p-3 rounded shadow-sm border border-gray-200")
                     
-                    # Clickable Link (Opens in new tab)
-                    link = jp.A(a=img_card, href=img_src, target="_blank", title="Click to expand")
-                    
-                    # The Image
-                    jp.Img(src=img_src, a=link, classes="w-full h-auto rounded hover:opacity-90 transition-opacity cursor-zoom-in")
-                    
-                    # Label (Clean up filename: "1_log_volume.png" -> "Log Volume")
+                    # Title for the Chart
                     clean_name = chart_name.split('.')[0].replace('_', ' ').title()[2:] 
-                    jp.Div(text=clean_name, a=img_card, classes="text-xs text-center font-mono mt-2 text-gray-500 font-bold")
+                    jp.Div(text=clean_name, a=img_card, classes="text-xs font-bold text-slate-700 mb-2 border-b pb-1")
 
+                    # --- [UPDATED IMAGE LOGIC] ---
+                    # We create the image directly (no <a> link wrapper needed)
+                    img = jp.Img(src=img_src, a=img_card, 
+                                 classes="w-full h-auto rounded hover:opacity-95 transition-opacity cursor-zoom-in",
+                                 title="Click to expand")
+                    
+                    # Define the Click Handler for THIS specific image
+                    def open_in_lightbox(self, msg):
+                        # 1. Update the lightbox image source to match this chart
+                        lightbox_img.src = self.src
+                        # 2. Show the lightbox (Change 'hidden' to 'flex' with animation)
+                        lightbox.classes = "fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-zoom-out transition-opacity duration-300"
+                    
+                    # Attach the handler
+                    img.on('click', open_in_lightbox)
+                    # --- [END UPDATE] ---
+
+            # 5. Handle "No Charts Found"
             if charts_found == 0:
-                jp.Div(text="(No charts found in Logs folder)", a=card4, classes="text-sm text-gray-400 italic mt-2")
+                jp.Div(text="(No charts generated)", a=analytics_content, classes="text-xs text-gray-400 italic")
+
+            # 6. Toggle Function
+            def toggle_analytics(self, msg):
+                if "hidden" in analytics_content.classes:
+                    analytics_content.classes = analytics_content.classes.replace("hidden", "")
+                    toggle_icon_charts.text = "▲"
+                else:
+                    analytics_content.classes = f"{analytics_content.classes} hidden"
+                    toggle_icon_charts.text = "▼"
+            
+            analytics_header.on('click', toggle_analytics)
             
             # --- [END NEW CODE] ---
-            
+                        
         except Exception as e:
             print(f"[ERROR] Report failed: {e}")
             # --- [INSERT THIS BLOCK] ---
