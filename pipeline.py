@@ -138,7 +138,7 @@ def app():
     # STEP 4: EXECUTIVE SUMMARY (New)
     # =========================================================
     card4 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8")
-    jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+    jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
     jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
 
     # =========================================================
@@ -383,7 +383,7 @@ def app():
         # --- RESET STEP 4 ---
         card4.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
         card4.delete_components()
-        jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+        jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
         jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
         
         # --- CONNECT THE PARSER BUTTON ---
@@ -646,7 +646,7 @@ def app():
             # ========================================================
             card4.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 transition-all duration-500 mt-8"
             card4.delete_components()
-            jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
             jp.Div(text="Ready to compile the final executive report.", a=card4, classes="text-green-600 font-medium mb-4")
             
@@ -674,7 +674,7 @@ def app():
     # 5. STEP 4: SUMMARY GENERATION LOGIC
     # ------------------------------------------------------------------
     async def run_summary_generation(self, msg):
-        print("------ [SUMMARIZING] ------")
+        print("------ [REPORT] ------")
         
         # --- UI UPDATE: SPINNER ---
         self.disabled = True
@@ -685,10 +685,31 @@ def app():
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            SUMMARIZING...
+            CREATING...
         </div>
         """
         self.classes = "w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed"
+        # --- [INSERT THIS BLOCK] ---
+        # 1. Save original states (in case of error)
+        card1_original = card1.classes
+        card2_original = card2.classes
+        card3_original = card3.classes
+
+        # 2. Lock Card 1
+        card1.classes = f"{card1_original} opacity-50 pointer-events-none"
+
+        # 3. Lock Card 2 (Handle existing opacity)
+        if "opacity-100" in card2.classes:
+            card2.classes = card2.classes.replace("opacity-100", "opacity-50 pointer-events-none")
+        else:
+            card2.classes += " opacity-50 pointer-events-none"
+
+        # 4. Lock Card 3 (Handle existing opacity)
+        if "opacity-100" in card3.classes:
+            card3.classes = card3.classes.replace("opacity-100", "opacity-50 pointer-events-none")
+        else:
+            card3.classes += " opacity-50 pointer-events-none"
+        # --- [END INSERT] ---
         await msg.page.update()
         
         try:
@@ -711,16 +732,21 @@ def app():
             print("---------------------------------------------------------------------------")
             print(f"File Saved To: {os.path.abspath(file_sorted)}")
             
+            # --- [INSERT THIS BLOCK TO UNLOCK CARDS ON SUCCESS] ---
+            card1.classes = card1_original
+            card2.classes = card2_original
+            card3.classes = card3_original
+            
             # --- SUCCESS: WIPE CARD & SHOW RESULTS ---
             card4.delete_components()
             
             # Re-add Header
-            jp.Div(text="Step 4: Summarization", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
+            jp.Div(text="Step 4: Analytics & Reporting", a=card4, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
             
             # Display Verification Results (No Button)
             result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-6 rounded-lg text-sm text-green-900 font-mono shadow-sm")
             result_box.inner_html = f"""
-            <div class="text-green-800 font-bold text-lg mb-2">✅ Executive Summary Complete</div>
+            <div class="text-green-800 font-bold text-lg mb-2">✅ Analytics & Report Complete</div>
             <div class="ml-2 text-green-700">
                 Merged parameters to event meanings and then sorted the logs.<br>
                 Full detailed report with charts have been generated.
@@ -737,8 +763,12 @@ def app():
             )
 
         except Exception as e:
-            print(f"[ERROR] Summary failed: {e}")
-            
+            print(f"[ERROR] Report failed: {e}")
+            # --- [INSERT THIS BLOCK] ---
+            # Restore cards if error occurs
+            card1.classes = card1_original
+            card2.classes = card2_original
+            card3.classes = card3_original
             self.inner_html = "" 
             self.text = "FAILED"
             self.classes = "w-full bg-red-600 text-white font-bold py-3 px-6 rounded shadow cursor-pointer"
