@@ -14,6 +14,7 @@ from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
 from meaning_generator import generate_meanings_for_file
 from summary_engine import step_1_merge_sentences, step_2_sort_logs, step_3_generate_report
+from image_handler import get_b64_image
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -761,7 +762,51 @@ def app():
                 a=card4,
                 classes="text-xs text-blue-600 italic mt-3"
             )
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            logs_dir = os.path.join(base_dir, "Logs")
+            
+            expected_charts = [
+                "1_log_volume.png", 
+                "2_top_services.png", 
+                "3_top_templates.png", 
+                "4_top_users.png", 
+                "5_top_ips.png"
+            ]
 
+            # 2. Section Header
+            jp.Div(text="📊 Visual Analytics", a=card4, classes="text-lg font-bold mt-8 mb-4 text-slate-700 border-b pb-1")
+            
+            # 3. Responsive Grid (1 column mobile, 2 columns desktop)
+            gallery_grid = jp.Div(a=card4, classes="grid grid-cols-1 md:grid-cols-2 gap-4")
+
+            # 4. Loop & Display
+            charts_found = 0
+            for chart_name in expected_charts:
+                chart_path = os.path.join(logs_dir, chart_name)
+                
+                # Use our new function from image_handler.py
+                img_src = get_b64_image(chart_path)
+                
+                if img_src:
+                    charts_found += 1
+                    # Card Container
+                    img_card = jp.Div(a=gallery_grid, classes="bg-white p-2 rounded-lg shadow border border-gray-200 hover:shadow-md transition-all")
+                    
+                    # Clickable Link (Opens in new tab)
+                    link = jp.A(a=img_card, href=img_src, target="_blank", title="Click to expand")
+                    
+                    # The Image
+                    jp.Img(src=img_src, a=link, classes="w-full h-auto rounded hover:opacity-90 transition-opacity cursor-zoom-in")
+                    
+                    # Label (Clean up filename: "1_log_volume.png" -> "Log Volume")
+                    clean_name = chart_name.split('.')[0].replace('_', ' ').title()[2:] 
+                    jp.Div(text=clean_name, a=img_card, classes="text-xs text-center font-mono mt-2 text-gray-500 font-bold")
+
+            if charts_found == 0:
+                jp.Div(text="(No charts found in Logs folder)", a=card4, classes="text-sm text-gray-400 italic mt-2")
+            
+            # --- [END NEW CODE] ---
+            
         except Exception as e:
             print(f"[ERROR] Report failed: {e}")
             # --- [INSERT THIS BLOCK] ---
