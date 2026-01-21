@@ -689,7 +689,6 @@ def app():
         </div>
         """
         self.classes = "w-full bg-gray-400 text-white font-sans font-bold italic py-3 px-6 rounded shadow transition-all cursor-not-allowed"
-        
         await msg.page.update()
         
         try:
@@ -722,15 +721,20 @@ def app():
             result_box = jp.Div(a=card4, classes="mt-4 bg-green-50 border border-green-200 p-6 rounded-lg text-sm text-green-900 font-mono shadow-sm")
             result_box.inner_html = f"""
             <div class="text-green-800 font-bold text-lg mb-2">✅ Executive Summary Complete</div>
-            <ul class="list-none space-y-1 text-sm text-green-700 font-mono ml-2">
-                <li>📂 <b>Merged Data:</b> {os.path.basename(file_merged)}</li>
-                <li>📂 <b>Sorted Data:</b> {os.path.basename(file_sorted)}</li>
-                <li>📄 <b>Full Report:</b> {os.path.basename(report_path)}</li>
-            </ul>
-            <div class="mt-3 text-xs text-green-600 italic">
-                Files and charts have been saved to the 'Logs' folder.
+            <div class="ml-2 text-green-700">
+                Merged parameters to event meanings and then sorted the logs.<br>
+                Full detailed report with charts have been generated.
+            </div>
+            <div class="mt-4 text-green-900 ml-2">
+                <b>📄 Full Detailed Report:</b> {os.path.basename(report_path)}
             </div>
             """
+            # --- [NEW CODE: EXTERNAL BLUE LABEL] ---
+            jp.Div(
+                text=f"(Files and charts have been saved to the 'Logs' folder.)",
+                a=card4,
+                classes="text-xs text-blue-600 italic mt-3"
+            )
 
         except Exception as e:
             print(f"[ERROR] Summary failed: {e}")
