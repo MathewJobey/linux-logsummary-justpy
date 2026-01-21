@@ -210,7 +210,7 @@ def write_executive_summary(df_logs, output_path, min_time, max_time, peak_str, 
     lines.append("## 4. Threat Intelligence (Fail2Ban Candidates)")
     if threat_df is not None and not threat_df.empty:
         threat_df = threat_df.sort_values('Max_Burst_Rate', ascending=False)
-        threat_headers = ["Host", "Trigger Time", "Burst/10min", "Total Failures"]
+        threat_headers = ["IP/Host", "Trigger Time", "Burst/10min", "Total Failures"]
         threat_rows = []
         
         for _, row in threat_df.iterrows():

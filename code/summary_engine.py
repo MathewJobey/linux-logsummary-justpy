@@ -116,7 +116,7 @@ def step_3_generate_report(file_path):
     print(f"[REPORT] Generating analytics for: {os.path.basename(file_path)}")
     
     base_dir = os.path.dirname(file_path)
-    report_path = os.path.join(base_dir, "Executive_Summary.txt")
+    report_path = os.path.join(base_dir, "Log_Analysis_Report.txt")
     
     # 1. Load Data
     try:
