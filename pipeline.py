@@ -164,15 +164,20 @@ def app():
     # --- Controls inside Content ---
     jp.Div(text="Select Summary Style:", a=c5_content, classes="text-sm font-bold text-gray-700 mt-4 mb-1")
     
+    # --- Style Toggle Buttons (Updated to Blue Scheme) ---
     style_box = jp.Div(a=c5_content, classes="flex gap-4 mb-4")
+    
+    # Active state matches the Blacklist selected items (Blue-100 background, Blue-500 border)
     btn_style_struct = jp.Div(text="Structured", a=style_box, 
                               classes="cursor-pointer px-4 py-2 rounded border border-blue-500 bg-blue-100 text-blue-700 font-bold text-sm shadow-sm transition-all")
+    
     btn_style_narrative = jp.Div(text="Narrative", a=style_box, 
                                  classes="cursor-pointer px-4 py-2 rounded border border-gray-300 bg-white text-gray-600 text-sm shadow-sm transition-all hover:bg-gray-50")
 
-    btn_ai_gen = jp.Button(text="✨ GENERATE AI ANALYSIS", a=c5_content, 
-                           classes="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
-
+    # --- Summarize Button (Updated to bg-blue-600) ---
+    btn_ai_gen = jp.Button(text="SUMMARIZE", a=c5_content, 
+                           classes="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
+    
     ai_output_wrap = jp.Div(a=c5_content, classes="hidden mt-6 border-t pt-6")
     jp.Div(text="🤖 AI Analysis Result:", a=ai_output_wrap, classes="text-sm font-bold text-gray-700 mt-4 mb-1")
     # Changed to white background, slate text, and removed 'whitespace-pre-wrap'
@@ -183,27 +188,34 @@ def app():
     
     chat_window = jp.Div(a=chat_wrap, classes="bg-white border border-gray-300 h-64 rounded-lg p-4 mb-4 overflow-y-auto flex flex-col gap-3 shadow-inner")
     
-    input_box = jp.Div(a=chat_wrap, classes="flex gap-2")
-    chat_input = jp.Input(a=input_box, placeholder="Ask a question about the logs...", 
-                          classes="flex-grow border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:border-indigo-500")
-    btn_send = jp.Button(text="SEND", a=input_box, 
-                         classes="bg-slate-700 text-white font-bold px-6 py-2 rounded hover:bg-slate-800 transition-all")
+    # --- [NEW INPUT BOX CODE] ---
+    # 1. Container: Added 'w-full' to stretch across card, 'mt-4' for spacing
+    input_box = jp.Div(a=chat_wrap, classes="flex flex-row gap-2 mt-4 w-full")
+    
+    # 2. Input: Added 'bg-white' so it isn't transparent, and 'shadow-sm' for depth
+    chat_input = jp.Input(a=input_box, placeholder="Ask a question about the logs...", type="text",
+                          classes="flex-grow border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm bg-white")
+    
+    # 3. Button: Switched to 'bg-blue-600' to ensure visibility
+    btn_send = jp.Button(text="SEND", a=input_box, type="button",
+                         classes="bg-blue-600 text-white font-bold px-6 py-2 rounded hover:bg-blue-700 transition-all shadow-sm cursor-pointer border border-blue-700")
+    # ----------------------------
      
     # ---------------------------------------------------------
     # UI EVENT HANDLERS (For the Style Buttons)
     # ---------------------------------------------------------
     def set_style_structured(self, msg):
         msg.page.state.ai_style = "structured"
-        # Update Visuals
+        # Structured = Active Blue | Narrative = Inactive Gray
         btn_style_struct.classes = "cursor-pointer px-4 py-2 rounded border border-blue-500 bg-blue-100 text-blue-700 font-bold text-sm shadow-sm transition-all"
         btn_style_narrative.classes = "cursor-pointer px-4 py-2 rounded border border-gray-300 bg-white text-gray-600 text-sm shadow-sm transition-all hover:bg-gray-50"
     
     def set_style_narrative(self, msg):
         msg.page.state.ai_style = "narrative"
-        # Update Visuals
-        btn_style_narrative.classes = "cursor-pointer px-4 py-2 rounded border border-indigo-500 bg-indigo-100 text-indigo-700 font-bold text-sm shadow-sm transition-all"
+        # Narrative = Active Blue | Structured = Inactive Gray
+        btn_style_narrative.classes = "cursor-pointer px-4 py-2 rounded border border-blue-500 bg-blue-100 text-blue-700 font-bold text-sm shadow-sm transition-all"
         btn_style_struct.classes = "cursor-pointer px-4 py-2 rounded border border-gray-300 bg-white text-gray-600 text-sm shadow-sm transition-all hover:bg-gray-50"
-
+        
     # Default the style
     wp.state.ai_style = "structured"
     btn_style_struct.on('click', set_style_structured)
@@ -275,26 +287,28 @@ def app():
                     card3.delete_components()
                     jp.Div(text="Step 3: Template Meaning Generation", a=card3, classes="text-xl font-bold italic mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 2 completion...", a=card3, classes="text-sm text-gray-500 italic")
-                else:
-                    print("[ERROR] Empty file content received.")
-                    upload_status.text = "Error: Browser sent empty file."
-                    # --- ADD THIS: RESET STEP 4 ---
+                    
+                    # --- [ADD THIS BLOCK] RESET STEP 4 ---
                     card4.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
                     card4.delete_components()
-                    jp.Div(text="Step 4: Summarize", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
+                    jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
                     
-                    # --- RESET STEP 5 ---
+                    # --- [ADD THIS BLOCK] RESET STEP 5 ---
                     card5.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8 mb-20"
-                    c5_header.classes = "text-xl font-bold italic mb-2 text-slate-800" # Restore 'italic'
-                    c5_waiting.classes = "text-sm text-gray-500 italic mb-4" # Show waiting
-                    c5_content.classes = "hidden" # Hide content
+                    c5_header.classes = "text-xl font-bold italic mb-2 text-slate-800" # Restore 'italic' style
+                    c5_waiting.classes = "text-sm text-gray-500 italic mb-4" # Show waiting text
+                    c5_content.classes = "hidden" # Hide content area
                     
                     # Clear internal AI state
                     ai_output_wrap.classes = "hidden mt-6 border-t pt-6"
                     chat_wrap.classes = "hidden mt-8 border-t pt-6"
                     chat_window.delete_components()
                     msg.page.state.chat_history = []
+                    
+                else:
+                    print("[ERROR] Empty file content received.")
+                    upload_status.text = "Error: Browser sent empty file."
         else:
             print("[WARNING] No file selected.")
             upload_status.text = "No file selected."
@@ -985,16 +999,46 @@ def app():
     
     async def run_ai_summary(self, msg):
         """Generates the initial summary based on selected style."""
-        # 1. UI Loading State
+        
+        # --- 1. UI Loading State (Spinner + Italics) ---
         btn_ai_gen.disabled = True
-        btn_ai_gen.text = "⏳ GENERATING ANALYSIS..."
-        btn_ai_gen.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded shadow cursor-wait"
+        btn_ai_gen.text = "" # Clear text to make room for HTML
+        btn_ai_gen.inner_html = """
+        <div class="flex items-center justify-center">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="italic">SUMMARIZING...</span>
+        </div>
+        """
+        btn_ai_gen.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded shadow cursor-not-allowed"
+        
+        # --- [NEW] LOCK PREVIOUS STEPS ---
+        # Save original classes to restore later
+        card1_original = card1.classes
+        card2_original = card2.classes
+        card3_original = card3.classes
+        card4_original = card4.classes
+
+        # Apply Disabled Styles (Opacity 50% + No Pointer Events)
+        card1.classes = f"{card1_original} opacity-50 pointer-events-none"
+        
+        # Helper to handle cards that might already be Opacity-100
+        def lock_card(c):
+            if "opacity-100" in c.classes:
+                return c.classes.replace("opacity-100", "opacity-50 pointer-events-none")
+            else:
+                return c.classes + " opacity-50 pointer-events-none"
+
+        card2.classes = lock_card(card2)
+        card3.classes = lock_card(card3)
+        card4.classes = lock_card(card4)
+        # ---------------------------------
+
         await msg.page.update()
         
         # 2. Get Data
-        # We assume the report is in the Logs folder with a standard name, 
-        # or we could save the path in state during Step 4. 
-        # For now, let's reconstruct the expected path:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         report_path = os.path.join(base_dir, "Logs", "Log_Analysis_Report.md")
         
@@ -1005,17 +1049,24 @@ def app():
         
         # 4. Update UI with Result
         ai_output_wrap.classes = "mt-6 border-t pt-6 block" # Unhide container
-        # Use inner_html (not text) and render the string
         ai_result_box.inner_html = render_markdown_text(summary_text)
         
         # 5. Unlock Chat Interface
         chat_wrap.classes = "mt-8 border-t pt-6 block" # Unhide chat
         
-        # 6. Reset Button
-        btn_ai_gen.text = "✨ RE-GENERATE ANALYSIS"
+        # 6. Reset Button (Restore Blue Color)
+        btn_ai_gen.inner_html = "" 
+        btn_ai_gen.text = "SUMMARIZE"
         btn_ai_gen.disabled = False
-        btn_ai_gen.classes = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
-
+        btn_ai_gen.classes = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
+        
+        # --- [NEW] RESTORE PREVIOUS STEPS ---
+        card1.classes = card1_original
+        card2.classes = card2_original
+        card3.classes = card3_original
+        card4.classes = card4_original
+        # ------------------------------------
+        
     async def handle_chat_message(self, msg):
         """Handles sending user questions to the AI."""
         user_text = chat_input.value
