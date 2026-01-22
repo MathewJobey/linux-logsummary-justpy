@@ -84,7 +84,7 @@ def app():
     # =========================================================
     # STEP 1: CLEANING & BLACKLIST
     # =========================================================
-    card1 = jp.Div(a=layout, classes="bg-white p-6 rounded-xl shadow-lg border border-gray-200 mb-8")
+    card1 = jp.Div(a=layout, classes="bg-white p-6 rounded-xl shadow border border-gray-200 mb-8")
     
     # Header
     jp.Div(text="Step 1: Clean & Filter", a=card1, classes="text-xl font-bold mb-4 text-slate-800 border-b pb-2")
@@ -149,7 +149,7 @@ def app():
    # =========================================================
     # STEP 5: AI Insights & Chat
     # =========================================================
-    card5 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8 mb-20")
+    card5 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8")
     
     # 1. Permanent Header
     c5_header = jp.Div(text="Step 5: AI Assistant & Insights", a=card5, classes="text-xl font-bold italic mb-2 text-slate-800")
@@ -189,15 +189,15 @@ def app():
     chat_window = jp.Div(a=chat_wrap, classes="bg-white border border-gray-300 h-64 rounded-lg p-4 mb-4 overflow-y-auto flex flex-col gap-3 shadow-inner")
     
     # --- [NEW INPUT BOX CODE] ---
-    # 1. Container: Added 'w-full' to stretch across card, 'mt-4' for spacing
-    input_box = jp.Div(a=chat_wrap, classes="flex flex-row gap-2 mt-4 w-full")
+    # 1. Container: Changed from jp.Div to jp.Form to handle Enter key correctly
+    input_box = jp.Form(a=chat_wrap, classes="flex flex-row gap-2 mt-4 w-full")
     
-    # 2. Input: Added 'bg-white' so it isn't transparent, and 'shadow-sm' for depth
+    # 2. Input: (Same styles, just attached to the Form now)
     chat_input = jp.Input(a=input_box, placeholder="Ask a question about the logs...", type="text",
                           classes="flex-grow border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm bg-white")
     
-    # 3. Button: Switched to 'bg-blue-600' to ensure visibility
-    btn_send = jp.Button(text="SEND", a=input_box, type="button",
+    # 3. Button: Changed type to 'submit' so it triggers the form
+    btn_send = jp.Button(text="SEND", a=input_box, type="submit",
                          classes="bg-blue-600 text-white font-bold px-6 py-2 rounded hover:bg-blue-700 transition-all shadow-sm cursor-pointer border border-blue-700")
     # ----------------------------
      
@@ -295,7 +295,7 @@ def app():
                     jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
                     
                     # --- [ADD THIS BLOCK] RESET STEP 5 ---
-                    card5.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8 mb-20"
+                    card5.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
                     c5_header.classes = "text-xl font-bold italic mb-2 text-slate-800" # Restore 'italic' style
                     c5_waiting.classes = "text-sm text-gray-500 italic mb-4" # Show waiting text
                     c5_content.classes = "hidden" # Hide content area
@@ -480,7 +480,7 @@ def app():
         jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
         jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
         # --- RESET STEP 5 ---
-        card5.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8 mb-20"
+        card5.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8"
         c5_header.classes = "text-xl font-bold italic mb-2 text-slate-800" # Restore 'italic'
         c5_waiting.classes = "text-sm text-gray-500 italic mb-4"
         c5_content.classes = "hidden"
@@ -842,7 +842,7 @@ def app():
             card2.classes = card2_original
             card3.classes = card3_original
             # Reveal and Enable Step 5
-            card5.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 mt-8 mb-20 transition-all duration-500"
+            card5.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 mt-8 transition-all duration-500"
             c5_header.classes = "text-xl font-bold mb-4 text-slate-800 border-b pb-2" # Removed 'italic'
             # TOGGLE: Hide Waiting, Show Content
             c5_waiting.classes = "hidden"
@@ -1103,8 +1103,8 @@ def app():
 
     # Connect Events
     btn_ai_gen.on('click', run_ai_summary)
-    btn_send.on('click', handle_chat_message)
-    # Allow pressing "Enter" in the chat box
-    chat_input.on('change', handle_chat_message)                
+    # Form submit handles both Button Click and Enter Key
+    # (And ignores clicks outside the box!)
+    input_box.on('submit', handle_chat_message)             
     return wp
 jp.justpy(app, port=8000)
