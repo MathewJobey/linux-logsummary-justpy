@@ -15,7 +15,8 @@ from parser import parse_log_file
 from meaning_generator import generate_meanings_for_file
 from report_engine import step_1_merge_sentences, step_2_sort_logs, step_3_generate_report
 from image_handler import get_b64_image, setup_lightbox
-from markdown_handler import render_markdown_report
+from markdown_handler import render_markdown_report, render_markdown_text
+from ai_assistant import generate_summary, chat_with_log
 
 # 2. STATE MANAGEMENT
 class PipelineState:
@@ -25,6 +26,7 @@ class PipelineState:
         self.meaning_file_path = None
         self.custom_blacklist = set()
         self.active_blacklist=[]
+        self.chat_history = []
 
 state = PipelineState()
 
@@ -144,6 +146,68 @@ def app():
     card4 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8")
     jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
     jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
+   # =========================================================
+    # STEP 5: AI Insights & Chat
+    # =========================================================
+    card5 = jp.Div(a=layout, classes="bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8 mb-20")
+    
+    # 1. Permanent Header
+    c5_header = jp.Div(text="Step 5: AI Assistant & Insights", a=card5, classes="text-xl font-bold italic mb-2 text-slate-800")
+    
+    # 2. WAITING STATE (Visible Initially)
+    c5_waiting = jp.Div(text="Waiting for Step 4 completion...", a=card5, classes="text-sm text-gray-500 italic mb-4")
+    
+    # 3. CONTENT STATE (Hidden Initially)
+    # We put all controls inside this wrapper so we can show/hide them easily
+    c5_content = jp.Div(a=card5, classes="hidden")
+    
+    # --- Controls inside Content ---
+    jp.Div(text="Select Summary Style:", a=c5_content, classes="text-sm font-bold text-gray-700 mt-4 mb-1")
+    
+    style_box = jp.Div(a=c5_content, classes="flex gap-4 mb-4")
+    btn_style_struct = jp.Div(text="Structured", a=style_box, 
+                              classes="cursor-pointer px-4 py-2 rounded border border-blue-500 bg-blue-100 text-blue-700 font-bold text-sm shadow-sm transition-all")
+    btn_style_narrative = jp.Div(text="Narrative", a=style_box, 
+                                 classes="cursor-pointer px-4 py-2 rounded border border-gray-300 bg-white text-gray-600 text-sm shadow-sm transition-all hover:bg-gray-50")
+
+    btn_ai_gen = jp.Button(text="✨ GENERATE AI ANALYSIS", a=c5_content, 
+                           classes="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer")
+
+    ai_output_wrap = jp.Div(a=c5_content, classes="hidden mt-6 border-t pt-6")
+    jp.Div(text="🤖 AI Analysis Result:", a=ai_output_wrap, classes="text-sm font-bold text-gray-700 mt-4 mb-1")
+    # Changed to white background, slate text, and removed 'whitespace-pre-wrap'
+    ai_result_box = jp.Div(a=ai_output_wrap, classes="bg-white text-slate-800 border border-gray-300 p-6 rounded-lg text-sm leading-relaxed shadow-inner max-h-96 overflow-y-auto")
+
+    chat_wrap = jp.Div(a=c5_content, classes="hidden mt-8 border-t pt-6")
+    jp.Div(text="💬 Chat with this Report:", a=chat_wrap, classes="text-sm font-bold text-gray-700 mt-4 mb-1")
+    
+    chat_window = jp.Div(a=chat_wrap, classes="bg-white border border-gray-300 h-64 rounded-lg p-4 mb-4 overflow-y-auto flex flex-col gap-3 shadow-inner")
+    
+    input_box = jp.Div(a=chat_wrap, classes="flex gap-2")
+    chat_input = jp.Input(a=input_box, placeholder="Ask a question about the logs...", 
+                          classes="flex-grow border border-gray-300 rounded px-4 py-2 text-sm focus:outline-none focus:border-indigo-500")
+    btn_send = jp.Button(text="SEND", a=input_box, 
+                         classes="bg-slate-700 text-white font-bold px-6 py-2 rounded hover:bg-slate-800 transition-all")
+     
+    # ---------------------------------------------------------
+    # UI EVENT HANDLERS (For the Style Buttons)
+    # ---------------------------------------------------------
+    def set_style_structured(self, msg):
+        msg.page.state.ai_style = "structured"
+        # Update Visuals
+        btn_style_struct.classes = "cursor-pointer px-4 py-2 rounded border border-blue-500 bg-blue-100 text-blue-700 font-bold text-sm shadow-sm transition-all"
+        btn_style_narrative.classes = "cursor-pointer px-4 py-2 rounded border border-gray-300 bg-white text-gray-600 text-sm shadow-sm transition-all hover:bg-gray-50"
+    
+    def set_style_narrative(self, msg):
+        msg.page.state.ai_style = "narrative"
+        # Update Visuals
+        btn_style_narrative.classes = "cursor-pointer px-4 py-2 rounded border border-indigo-500 bg-indigo-100 text-indigo-700 font-bold text-sm shadow-sm transition-all"
+        btn_style_struct.classes = "cursor-pointer px-4 py-2 rounded border border-gray-300 bg-white text-gray-600 text-sm shadow-sm transition-all hover:bg-gray-50"
+
+    # Default the style
+    wp.state.ai_style = "structured"
+    btn_style_struct.on('click', set_style_structured)
+    btn_style_narrative.on('click', set_style_narrative)
 
     # =========================================================
     # LOGIC HANDLERS
@@ -219,6 +283,18 @@ def app():
                     card4.delete_components()
                     jp.Div(text="Step 4: Summarize", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
                     jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
+                    
+                    # --- RESET STEP 5 ---
+                    card5.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8 mb-20"
+                    c5_header.classes = "text-xl font-bold italic mb-2 text-slate-800" # Restore 'italic'
+                    c5_waiting.classes = "text-sm text-gray-500 italic mb-4" # Show waiting
+                    c5_content.classes = "hidden" # Hide content
+                    
+                    # Clear internal AI state
+                    ai_output_wrap.classes = "hidden mt-6 border-t pt-6"
+                    chat_wrap.classes = "hidden mt-8 border-t pt-6"
+                    chat_window.delete_components()
+                    msg.page.state.chat_history = []
         else:
             print("[WARNING] No file selected.")
             upload_status.text = "No file selected."
@@ -389,6 +465,17 @@ def app():
         card4.delete_components()
         jp.Div(text="Step 4: Analytics & Report", a=card4, classes="text-xl font-bold italic mb-2 text-slate-800")
         jp.Div(text="Waiting for Step 3 completion...", a=card4, classes="text-sm text-gray-500 italic")
+        # --- RESET STEP 5 ---
+        card5.classes = "bg-gray-50 p-6 rounded-xl shadow border border-gray-200 opacity-50 pointer-events-none mt-8 mb-20"
+        c5_header.classes = "text-xl font-bold italic mb-2 text-slate-800" # Restore 'italic'
+        c5_waiting.classes = "text-sm text-gray-500 italic mb-4"
+        c5_content.classes = "hidden"
+        
+        # Clear internal AI state
+        ai_output_wrap.classes = "hidden mt-6 border-t pt-6"
+        chat_wrap.classes = "hidden mt-8 border-t pt-6"
+        chat_window.delete_components()
+        msg.page.state.chat_history = []
         
         # --- CONNECT THE PARSER BUTTON ---
         btn_parse = jp.Button(text="PARSE", a=card2, 
@@ -740,6 +827,12 @@ def app():
             card1.classes = card1_original
             card2.classes = card2_original
             card3.classes = card3_original
+            # Reveal and Enable Step 5
+            card5.classes = "bg-white p-6 rounded-xl shadow border border-gray-200 opacity-100 mt-8 mb-20 transition-all duration-500"
+            c5_header.classes = "text-xl font-bold mb-4 text-slate-800 border-b pb-2" # Removed 'italic'
+            # TOGGLE: Hide Waiting, Show Content
+            c5_waiting.classes = "hidden"
+            c5_content.classes = "block"
             
             # --- SUCCESS: WIPE CARD & SHOW RESULTS ---
             card4.delete_components()
@@ -885,6 +978,82 @@ def app():
             self.classes = "w-full bg-red-600 text-white font-bold py-3 px-6 rounded shadow cursor-pointer"
             self.disabled = False
             jp.Div(text=f"Error: {str(e)}", a=card4, classes="text-red-600 font-bold mt-2")
-                    
+    
+    # ------------------------------------------------------------------
+    # 6. STEP 5: AI LOGIC HANDLERS
+    # ------------------------------------------------------------------
+    
+    async def run_ai_summary(self, msg):
+        """Generates the initial summary based on selected style."""
+        # 1. UI Loading State
+        btn_ai_gen.disabled = True
+        btn_ai_gen.text = "⏳ GENERATING ANALYSIS..."
+        btn_ai_gen.classes = "w-full bg-gray-400 text-white font-bold py-3 px-6 rounded shadow cursor-wait"
+        await msg.page.update()
+        
+        # 2. Get Data
+        # We assume the report is in the Logs folder with a standard name, 
+        # or we could save the path in state during Step 4. 
+        # For now, let's reconstruct the expected path:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        report_path = os.path.join(base_dir, "Logs", "Log_Analysis_Report.md")
+        
+        selected_style = getattr(msg.page.state, 'ai_style', 'structured')
+        
+        # 3. Call AI (Async)
+        summary_text = await asyncio.to_thread(generate_summary, report_path, selected_style)
+        
+        # 4. Update UI with Result
+        ai_output_wrap.classes = "mt-6 border-t pt-6 block" # Unhide container
+        # Use inner_html (not text) and render the string
+        ai_result_box.inner_html = render_markdown_text(summary_text)
+        
+        # 5. Unlock Chat Interface
+        chat_wrap.classes = "mt-8 border-t pt-6 block" # Unhide chat
+        
+        # 6. Reset Button
+        btn_ai_gen.text = "✨ RE-GENERATE ANALYSIS"
+        btn_ai_gen.disabled = False
+        btn_ai_gen.classes = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded shadow transition-all cursor-pointer"
+
+    async def handle_chat_message(self, msg):
+        """Handles sending user questions to the AI."""
+        user_text = chat_input.value
+        if not user_text.strip(): return
+        
+        # 1. Clear Input & Update History
+        chat_input.value = ""
+        msg.page.state.chat_history.append({'role': 'user', 'content': user_text})
+        
+        # 2. Render User Bubble Immediately
+        jp.Div(text=user_text, a=chat_window, 
+               classes="bg-blue-100 text-blue-800 p-3 rounded-lg self-end max-w-xs text-sm shadow-sm")
+        
+        # Loading Bubble
+        loading_bubble = jp.Div(text="Thinking...", a=chat_window, 
+                                classes="bg-gray-100 text-gray-500 p-3 rounded-lg self-start text-xs italic")
+        await msg.page.update()
+        
+        # 3. Call AI (Async)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        report_path = os.path.join(base_dir, "Logs", "Log_Analysis_Report.md")
+        
+        ai_response = await asyncio.to_thread(chat_with_log, report_path, msg.page.state.chat_history, user_text)
+        
+        # 4. Remove Loading & Render AI Bubble
+        chat_window.remove_component(loading_bubble)
+        msg.page.state.chat_history.append({'role': 'assistant', 'content': ai_response})
+        
+        jp.Div(text=ai_response, a=chat_window, 
+               classes="bg-gray-200 text-gray-800 p-3 rounded-lg self-start max-w-md text-sm shadow-sm whitespace-pre-wrap")
+        
+        # Auto-scroll to bottom (Simple JS injection)
+        await msg.page.run_javascript(f"document.getElementById('{chat_window.id}').scrollTop = document.getElementById('{chat_window.id}').scrollHeight")
+
+    # Connect Events
+    btn_ai_gen.on('click', run_ai_summary)
+    btn_send.on('click', handle_chat_message)
+    # Allow pressing "Enter" in the chat box
+    chat_input.on('change', handle_chat_message)                
     return wp
 jp.justpy(app, port=8000)
