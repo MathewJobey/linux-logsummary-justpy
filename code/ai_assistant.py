@@ -1,7 +1,6 @@
 import os
 import ollama
-import shutil
-import subprocess
+
 
 # ==========================================
 # CONFIGURATION
@@ -35,82 +34,6 @@ PROMPT_STRUCTURED = (
     "**FORMAT:**\n"
     "- Keep the response concise (250-300 words max). Prioritize the most critical information first."
 )
-
-# ==========================================
-# SYSTEM CHECKS
-# ==========================================
-
-def check_system_resources():
-    """Checks if a GPU is available for processing."""
-    print("\n--- [SYSTEM CHECK] ---")
-    
-    # Simple check for NVIDIA GPU via command line
-    if shutil.which('nvidia-smi'):
-        try:
-            result = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"✅ GPU Detected: {result.stdout.strip()}")
-                print(">> Ollama will automatically offload to GPU.")
-            else:
-                print("⚠️ NVIDIA-SMI found but returned error. Falling back to CPU logic.")
-        except:
-            print("⚠️ Error checking GPU. Assuming CPU.")
-    else:
-        print("ℹ️ No dedicated GPU detected (nvidia-smi missing). Running on CPU.")
-    print("----------------------")
-
-def ensure_model_available():
-    """Checks if the model exists in Ollama. Pulls it if missing."""
-    print(f"🔍 Checking for model: {MODEL_NAME}...")
-    
-    try:
-        # List available models
-        models_info = ollama.list()
-        
-        # Robustly extract model names (Handles different API versions)
-        existing_models = []
-        
-        # Safely get the list of models (whether it's a dict or object)
-        model_list = models_info.get('models', []) if isinstance(models_info, dict) else getattr(models_info, 'models', [])
-
-        for m in model_list:
-            # Handle Dictionary format
-            if isinstance(m, dict):
-                name = m.get('name') or m.get('model')
-            # Handle Object format (Pydantic models)
-            else:
-                name = getattr(m, 'name', None) or getattr(m, 'model', None)
-            
-            if name:
-                existing_models.append(str(name))
-        
-        # DEBUG: Show what we found to help diagnose mismatches
-        # print(f"   (Found locally: {', '.join(existing_models)})")
-
-        # 1. Exact Match Check
-        if any(MODEL_NAME in m for m in existing_models):
-            print(f"✅ Model '{MODEL_NAME}' is ready.")
-            return True
-        
-        # 2. Fallback: Check for base name if specific tag is missing
-        # (e.g. if we want 'llama3.1:8b' but have 'llama3.1:latest')
-        base_name = MODEL_NAME.split(':')[0]
-        if any(base_name in m for m in existing_models):
-            print(f"⚠️ Exact tag '{MODEL_NAME}' not found, but '{base_name}' exists.")
-            print(f"   Continuing with existing model to save time.")
-            return True
-
-        # 3. Not found? Download.
-        print(f"⚠️ Model '{MODEL_NAME}' not found locally.")
-        print(f"⬇️ Downloading {MODEL_NAME}... (This may take a while)")
-        ollama.pull(MODEL_NAME)
-        print(f"✅ Download complete: {MODEL_NAME}")
-            
-    except Exception as e:
-        print(f"❌ Error communicating with Ollama: {e}")
-        print("💡 Is the Ollama app running?")
-        return False
-    return True
 # ==========================================
 # AI FUNCTIONS
 # ==========================================
@@ -120,10 +43,8 @@ def generate_summary(report_path, style="structured"):
     Generates a summary of the log report using Ollama.
     Saves the output to the Logs folder.
     """
-    # 1. System & Model Prep
-    check_system_resources()
-    if not ensure_model_available():
-        return "Error: Ollama not reachable or model download failed."
+    # 1. System Prep (Assumes Step 3 has already prepared the model)
+    print(f"🚀 Generative AI running ({style} mode)...")
 
     # 2. Select Prompt
     if style == "narrative":
@@ -142,8 +63,6 @@ def generate_summary(report_path, style="structured"):
             report_content = f.read()
     except Exception as e:
         return f"Error reading report: {e}"
-
-    print(f"🚀 Generative AI running ({style} mode)...")
     
     # 4. Generate
     try:
@@ -189,6 +108,7 @@ def chat_with_log(report_path, chat_history, user_question):
             'content': (
                 f"You are a helpful AI Assistant analyzing a Linux Log Report. "
                 f"Here is the report context:\n\n{report_content}\n\n"
+                f"You have an overall understanding of Linux system administration and log analysis. "
                 f"Answer the user's questions based ONLY on this report. "
                 f"Be concise and technical."
             )
