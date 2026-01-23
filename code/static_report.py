@@ -171,7 +171,13 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
                     log_content = str(row['Drained Named Log']).strip()
                 else:
                     log_content = str(row['Raw Log']).strip()
-                meaning_content = generic_map.get(str(tid), str(row['Meaning Log'])).strip()
+                
+                # 1. Get the generic template (with <LABELS>)
+                raw_meaning = generic_map.get(str(tid), str(row['Meaning Log'])).strip()
+                
+                # 2. Escape the brackets so HTML displays "<TIMESTAMP>" instead of hiding it
+                meaning_content = raw_meaning.replace("<", "&lt;").replace(">", "&gt;")
+                
                 label = "TEMPLATE"
 
             lines_list.append(f"### Template ID: {tid} (Count: {count})")
