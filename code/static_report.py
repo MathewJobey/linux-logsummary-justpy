@@ -48,7 +48,7 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
     # 2. HELPER: ANALYSIS FUNCTIONS
     # ==========================================
     def get_session_analysis(df):
-        # Label Events
+        # 1. Label Events
         def get_event_type(row):
             tag = str(row.get('Security_Tag', ''))
             msg = (str(row.get('Meaning Log', '')) + " " + str(row.get('Raw Log', ''))).lower()
@@ -62,20 +62,51 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
 
         if df.empty: return ["- No login/logout activity detected."]
 
-        user_stacks = {}
+        # [CHANGE 1] Dictionary key is now (User, Service) instead of just User
+        # This ensures 'sshd' events never mix with 'login' or 'su' events
+        session_stacks = {} 
         completed = []
+        
+        # Trackers for deduplication (also keyed by User+Service)
+        last_login_map = {} 
+        last_logout_map = {}
+        DEDUPE_WINDOW = 5 # seconds
 
         for _, row in df.iterrows():
             user = row.get('USERNAME', 'N/A')
+            # [CHANGE 2] Fetch the Service Name (e.g., sshd, login, su)
+            service = row.get('Service', 'Unknown') 
+            
             if user == 'N/A': continue
+            
+            # Create a unique identity for this session stream
+            stack_key = (user, service)
+            
             evt, ts = row['Event_Type'], row['datetime']
 
             if evt == 'LOGIN':
-                if user not in user_stacks: user_stacks[user] = []
-                user_stacks[user].append(ts)
+                # Debounce: Only ignore if SAME user on SAME service logs in twice quickly
+                last_time = last_login_map.get(stack_key)
+                if last_time and (ts - last_time).total_seconds() < DEDUPE_WINDOW:
+                    continue 
+                
+                last_login_map[stack_key] = ts
+                if stack_key not in session_stacks: session_stacks[stack_key] = []
+                session_stacks[stack_key].append(ts)
+
             elif evt == 'LOGOUT':
-                if user in user_stacks and user_stacks[user]:
-                    start = user_stacks[user].pop()
+                # Debounce Logout
+                last_time = last_logout_map.get(stack_key)
+                if last_time and (ts - last_time).total_seconds() < DEDUPE_WINDOW:
+                    continue
+
+                last_logout_map[stack_key] = ts
+
+                # Pop from the SPECIFIC service stack
+                if stack_key in session_stacks and session_stacks[stack_key]:
+                    start = session_stacks[stack_key].pop()
+                    
+                    # Calculate duration
                     duration = ts - start
                     s = int(duration.total_seconds())
                     h, rem = divmod(s, 3600)
@@ -85,14 +116,31 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
                     elif m > 0: dur_str = f"{m}m {s}s"
                     else: dur_str = f"{s}s"
                     
-                    completed.append(f"- **User '{user}'**: Logged in for {dur_str} ({start.strftime('%Y-%m-%d %H:%M')} to {ts.strftime('%Y-%m-%d %H:%M')})")
+                    # [CHANGE 3] Include Service Name in report so you know which is which
+                    completed.append(f"- **User '{user}'** ({service}): Logged in for {dur_str} ({start.strftime('%Y-%m-%d %H:%M')} to {ts.strftime('%Y-%m-%d %H:%M')})")
 
-        # Active Sessions
-        for user, starts in user_stacks.items():
+        # Active Sessions (Process Stale/Active)
+        import datetime
+        if not df['datetime'].empty:
+            now = df['datetime'].max()
+        else:
+            now = pd.Timestamp.now()
+
+        for stack_key, starts in session_stacks.items():
+            user, service = stack_key
             for start in starts:
-                completed.append(f"- **User '{user}'**: 🟢 Active Session (Since {start.strftime('%Y-%m-%d %H:%M')})")
+                duration_hours = (now - start).total_seconds() / 3600
+                
+                # Check for "Zombie" sessions (older than 24 hours)
+                if duration_hours < 24:
+                    status_icon = "🟢 Active Session"
+                else:
+                    status_icon = "⚠️ Stale Session (No Logout)"
 
-        return completed[-15:] if completed else ["- No complete sessions found."]
+                completed.append(f"- **User '{user}'** ({service}): {status_icon} (Since {start.strftime('%Y-%m-%d %H:%M')})")
+
+        # Increase limit to 50 (or remove the slice [:] entirely to see everything)
+        return completed[-25:] if completed else ["- No complete sessions found."]
     
     def get_top_3_str(series):
         if series.empty: return "None"
