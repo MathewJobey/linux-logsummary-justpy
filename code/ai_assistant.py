@@ -44,7 +44,7 @@ def generate_summary(report_path, style="structured"):
     Saves the output to the Logs folder.
     """
     # 1. System Prep (Assumes Step 3 has already prepared the model)
-    print(f"🚀 Generative AI running ({style} mode)...")
+    print(f"\n🚀 Generative AI running ({style} mode)...")
 
     # 2. Select Prompt
     if style == "narrative":

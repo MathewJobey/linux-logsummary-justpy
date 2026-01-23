@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 # Import your tools
 from cleaner import clean_log_file, BASE_BLACKLIST, find_new_processes
 from parser import parse_log_file 
-from meaning_generator import generate_meanings_for_file
+#from meaning_generator import generate_meanings_for_file
+from llama_meaning_generator import generate_meanings_for_file
 from report_engine import step_1_merge_sentences, step_2_sort_logs, step_3_generate_report
 from image_handler import get_b64_image, setup_lightbox
 from markdown_handler import render_markdown_report, render_markdown_text
@@ -702,7 +703,7 @@ def app():
             <div class="ml-4">
                 • <b>Time Taken:</b> {total_duration}<br>
                 • <b>Templates Processed:</b> {count}<br>
-                • <b>Model:</b> Microsoft Phi-3 Mini
+                • <b>Model:</b> meta-llama/Llama-3.1-8B
             </div>
             """
             
@@ -1095,11 +1096,24 @@ def app():
         chat_window.remove_component(loading_bubble)
         msg.page.state.chat_history.append({'role': 'assistant', 'content': ai_response})
         
-        jp.Div(text=ai_response, a=chat_window, 
-               classes="bg-gray-200 text-gray-800 p-3 rounded-lg self-start max-w-md text-sm shadow-sm whitespace-pre-wrap")
+        # --- [UPDATED] RENDER MARKDOWN BUBBLE ---
+        # 1. Convert raw text to HTML (Bold, Code blocks, Tables)
+        formatted_html = render_markdown_text(ai_response)
         
-        # Auto-scroll to bottom (Simple JS injection)
-        await msg.page.run_javascript(f"document.getElementById('{chat_window.id}').scrollTop = document.getElementById('{chat_window.id}').scrollHeight")
+        # 2. Render Bubble
+        # - max-w-3xl: Wider width to fit tables/logs without cramping
+        # - Removed 'overflow' classes: Forces the bubble to expand fully instead of scrolling
+        jp.Div(inner_html=formatted_html, a=chat_window, 
+               classes="bg-gray-50 text-slate-800 p-4 rounded-lg self-start max-w-3xl text-sm shadow-sm border border-gray-200")
+        
+        # 5. Auto-scroll to bottom (Robust Timeout Version)
+        # We wait 100ms for the large bubble to render, then scroll the window
+        await msg.page.run_javascript(f"""
+            setTimeout(function() {{
+                var chat = document.getElementById('{chat_window.id}');
+                chat.scrollTop = chat.scrollHeight; 
+            }}, 100);
+        """)
 
     # Connect Events
     btn_ai_gen.on('click', run_ai_summary)
