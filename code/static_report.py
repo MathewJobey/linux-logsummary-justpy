@@ -1,6 +1,7 @@
 import pandas as pd
 import textwrap
 import os
+from session_logic import analyze_sessions
 
 def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, peak_vol, total_hours, generic_map, threat_df=None):
     print(f"[REPORT] Writing grid-aligned report to {os.path.basename(output_path)}...")
@@ -44,7 +45,7 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
             
         return lines
 
-    # ==========================================
+    """# ==========================================
     # 2. HELPER: ANALYSIS FUNCTIONS
     # ==========================================
     def get_session_analysis(df):
@@ -140,7 +141,7 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
                 completed.append(f"- **User '{user}'** ({service}): {status_icon} (Since {start.strftime('%Y-%m-%d %H:%M')})")
 
         # Increase limit to 50 (or remove the slice [:] entirely to see everything)
-        return completed[-25:] if completed else ["- No complete sessions found."]
+        return completed[-25:] if completed else ["- No complete sessions found."]"""
     
     def get_top_3_str(series):
         if series.empty: return "None"
@@ -206,7 +207,7 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
     else:
         min_occurrence, rare_template_ids, rare_count = 0, [], 0
         
-    session_list = get_session_analysis(df_logs)
+    session_list = analyze_sessions(df_logs)
     avg_rate = total_events / (total_hours if total_hours > 0 else 1)
 
     # ==========================================
@@ -260,7 +261,7 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
     else:
         lines.append("> ✅ No Warning events.")
     lines.append("")
-
+    
     # --- 4. Threat Intelligence (Dynamic Table) ---
     lines.append("## 4. Threat Intelligence (Fail2Ban Candidates)")
     if threat_df is not None and not threat_df.empty:
