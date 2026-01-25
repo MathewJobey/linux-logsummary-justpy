@@ -106,20 +106,17 @@ def extract_named_parameters(clean_raw_line, template):
     Extracts values using the Cleaned Raw Line (no trailing timestamp).
     """
     params = {}
+    
+    # --- PART A: Existing Template Matching Logic ---
     regex_pattern = re.escape(template)
 
-    # --- FIX: Allow flexible whitespace (Non-Greedy) ---
-    # Use \s+? so it matches the minimum delimiter spaces (1) 
-    # and leaves the rest for the <USERNAME> capture group.
+    # Allow flexible whitespace
     regex_pattern = regex_pattern.replace(r"\ ", r"\s+?").replace(" ", r"\s+?")
     
-    # --- FIX START: Handle Drain Wildcards (*) ---
-    # If Drain generates a '*', re.escape turns it into '\*'.
-    # We must convert it back to a regex wildcard (.*?) to match the log.
+    # Handle Drain Wildcards
     regex_pattern = regex_pattern.replace(r"\*", r"(.*?)")
-    # --- FIX END ---
 
-    # Special tags
+    # Special tags mapping
     special_tags = {
         "<TIMESTAMP>": r"([A-Z][a-z]{2}\s+\d+\s\d{2}:\d{2}:\d{2})",
         "<HOSTNAME>": r"(\S+)"
@@ -130,7 +127,7 @@ def extract_named_parameters(clean_raw_line, template):
         if tag in template:
             regex_pattern = regex_pattern.replace(re.escape(tag), pattern)
 
-    # Replace remaining tags generically
+    # Replace remaining generic tags
     remaining_tags = re.findall(r"<[A-Z]+>", template)
     for tag in set(remaining_tags):
         if tag not in special_tags:
@@ -140,51 +137,33 @@ def extract_named_parameters(clean_raw_line, template):
 
     try:
         match = re.match(regex_pattern, clean_raw_line)
-        if not match:
-            return json.dumps({})
-
-        extracted_values = list(match.groups())
-        
-        # We need to find the order of tags in the regex pattern to map them correctly.
-        # But wait, the '*' wildcard also captures a group!
-        # If the template had '*', we now have an extra group in extracted_values that
-        # does NOT correspond to a named tag in 'ordered_tags'.
-        
-        # Simple heuristic: Only map named tags.
-        # We can re-find the tags in the template and map them sequentially.
-        # Note: This simple mapping assumes '*' appears between tags or at ends
-        # and doesn't disrupt the sequence of Named Tags.
-        
-        ordered_tags = re.findall(r"<[A-Z]+>", template)
-        
-        # FILTER: If we introduced extra groups via (*), we might have more values than tags.
-        # However, for this specific use case, we usually only care about the Named Tags.
-        # A robust solution requires complex regex group naming, but for now, 
-        # let's assume we just want to grab the named ones if the count matches.
-        
-        if len(extracted_values) == len(ordered_tags):
-             for tag, value in zip(ordered_tags, extracted_values):
-                key = tag.strip("<>")
-                # Handle cases where value might be None (though rare with this regex)
-                if value is None: 
-                    value = ""
-                #value = value.strip()
-
-            # DELETE or COMMENT OUT these lines to allow empty parameters:
-            # if not value:
-            #     continue
-
-                if key in params:
-                    if value not in params[key]:
+        if match:
+            extracted_values = list(match.groups())
+            ordered_tags = re.findall(r"<[A-Z]+>", template)
+            
+            if len(extracted_values) == len(ordered_tags):
+                 for tag, value in zip(ordered_tags, extracted_values):
+                    key = tag.strip("<>")
+                    if value is None: value = ""
+                    
+                    if key in params:
                         params[key] = f"{params[key]}, {value}"
-                else:
-                    params[key] = value
-        
-        # Fallback: if counts mismatch (due to *), we can't reliably map by index alone
-        # without named groups. Given your requirements, this simple version covers 99% of cases.
-
+                    else:
+                        params[key] = value
     except Exception:
         pass
+
+    # --- PART B: FIX - Force Header Extraction ---
+    # We manually extract the TIMESTAMP and HOSTNAME from the raw line 
+    # to ensure they are always captured correctly, regardless of template matching.
+    
+    # This Regex matches: ^(Jun 18 20:20:20) (combo) ...
+    header_match = re.search(r'^([A-Z][a-z]{2}\s+\d+\s\d{2}:\d{2}:\d{2})\s+(\S+)', clean_raw_line)
+    
+    if header_match:
+        # Overwrite/Set these keys with the authoritative raw values
+        params['TIMESTAMP'] = header_match.group(1)
+        params['HOSTNAME'] = header_match.group(2)
 
     return json.dumps(params)
 
