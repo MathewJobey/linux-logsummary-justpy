@@ -147,24 +147,85 @@ def step_3_generate_report(file_path):
         return "Unknown"
     df_logs['Service'] = df_logs['Raw Log'].apply(extract_service)
 
+# --- YEAR SCANNING LOGIC ---
+    import datetime
+ # 1. Detect Anchor Year
+    anchor_year = datetime.datetime.now().year
+    found_year = False
+    
+    # CHANGE: Instead of a subset, we iterate through the ENTIRE dataframe.
+    # We use df_logs.iterrows() directly.
+    for index, row in df_logs.iterrows():
+        
+        # Priority A: Check JSON Timestamp
+        ts_json = str(row['params'].get('TIMESTAMP', ''))
+        match_json = re.search(r'(20\d{2})', ts_json)
+        
+        if match_json:
+            anchor_year = int(match_json.group(1))
+            found_year = True
+            break  # STOP scanning once we find it!
+        
+        # Priority B: Check END of Raw Log
+        raw_str = str(row['Raw Log']).strip()
+        match_end = re.search(r'(20\d{2})\s*$', raw_str)
+        
+        if match_end:
+            anchor_year = int(match_end.group(1))
+            found_year = True
+            break  # STOP scanning once we find it!
+            
+    print(f"[TIME] Year detected: {anchor_year} (Source: {'Logs' if found_year else 'System Date'})")
+
+   # 2. Parse Dates (Robust Method)
     def parse_time(row):
         ts = row['params'].get('TIMESTAMP', '')
+        
+        # Fallback: Scrape Raw Log if JSON is empty
         if not ts: 
             parts = str(row['Raw Log']).split()
+            # Standard syslog often puts date at START (Jul 15 ...)
             if len(parts) >= 3: ts = " ".join(parts[:3])
+            
         try:
-            return pd.to_datetime(f"2024 {ts}", format="%Y %b %d %H:%M:%S")
+            ts_str = str(ts).strip()
+            
+            # PREPEND YEAR FIX:
+            # If timestamp doesn't start with 20xx, prepend the anchor year.
+            if not re.match(r'^20\d{2}', ts_str):
+                ts_str = f"{anchor_year} {ts_str}"
+            
+            return pd.to_datetime(ts_str)
         except:
-            return pd.to_datetime(ts, errors='coerce')
-    
+            return pd.NaT
+
     df_logs['datetime'] = df_logs.apply(parse_time, axis=1)
+    
+    # 3. Handle Year Rollover (Dec 31 -> Jan 01)
+    mask_valid = df_logs['datetime'].notna()
+    if mask_valid.sum() > 0:
+        months = df_logs.loc[mask_valid, 'datetime'].dt.month.tolist()
+        
+        rollover_index = -1
+        # Scan for the "12 -> 1" drop
+        for i in range(len(months) - 1):
+            if months[i] == 12 and months[i+1] == 1:
+                rollover_index = i + 1
+                break
+        
+        # Apply +1 Year to everything after the rollover
+        if rollover_index != -1:
+            print("[TIME] Detected Year Rollover (Dec -> Jan). Adjusting subsequent logs.")
+            valid_indices = df_logs[mask_valid].index
+            indices_to_update = valid_indices[rollover_index:]
+            
+            df_logs.loc[indices_to_update, 'datetime'] = df_logs.loc[indices_to_update, 'datetime'].apply(
+                lambda dt: dt.replace(year=dt.year + 1)
+            )
+
+    # Filter out invalid dates
     df_logs = df_logs.dropna(subset=['datetime'])
     
-    if len(df_logs) == 0:
-        return "No valid timestamps found."
-
-    df_logs['Template ID'] = df_logs['Template ID'].astype(str)
-
     def classify_severity(row):
         text = (str(row['Raw Log']) + " " + str(row['Meaning Log'])).lower()
         if any(x in text for x in ['critical', 'fatal', 'panic', 'emergency', 'alert', 'died']): return 'CRITICAL'
@@ -174,10 +235,11 @@ def step_3_generate_report(file_path):
 
     def classify_security(row):
         text = (str(row['Raw Log']) + " " + str(row['Meaning Log'])).lower()
+        svc = str(row['Service']).lower()
         tags = []
         if 'illegal' in text or 'invalid user' in text: tags.append('Illegal Access')
         if 'authentication failure' in text or 'failed password' in text or "couldn't authenticate" in text: tags.append('Auth Failure')
-        if 'sudo' in text or 'su(' in text or 'uid=0' in text or 'id=0' in text or 'user=root' in text: tags.append('Privilege Activity')
+        if 'sudo' in svc or 'su' in svc or 'uid=0' in text or 'id=0' in text or 'user=root' in text: tags.append('Privilege Activity')
         if 'session opened' in text or 'accepted' in text: tags.append('Successful Login')
         if 'session closed' in text or 'logged out' in text: tags.append('Session Logout')
         if not tags: return 'Normal'
