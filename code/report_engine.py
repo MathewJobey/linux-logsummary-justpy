@@ -255,6 +255,7 @@ def step_3_generate_report(file_path):
     
     def classify_severity(row):
         text = (str(row['Raw Log']) + " " + str(row['Meaning Log'])).lower()
+        if 'peer died' in text: return 'INFO' # to remove peer died case of telnetd[16732]: ttloop:  peer died: Invalid or incomplete multibyte or wide character
         if any(x in text for x in ['critical', 'fatal', 'panic', 'emergency', 'alert', 'died']): return 'CRITICAL'
         if any(x in text for x in ['warning', 'warn', 'error', 'refused', 'failed']): return 'WARNING'
         return 'INFO'
