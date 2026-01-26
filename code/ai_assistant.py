@@ -7,104 +7,168 @@ import ollama
 MODEL_NAME = "llama3.1:8b"
 
 # ==========================================
-# PART 1 PROMPTS (Security Core)
-# Sections: Executive Overview, Security Metrics, Risk Highlights, Threat Intel
+# PART 1: INTRO & RISK OVERVIEW
+# Content: Intro, Executive Overview, Security Metrics, Risk Highlights
 # ==========================================
-
 NARRATIVE_P1 = (
-    "You are a Senior Linux System Administrator explaining a log analysis report to a technical stakeholder.\n"
-    "Write as if you are speaking naturally, not reading from a report.\n\n"
-    "**FOCUS AREAS:** Executive Overview, Security Audit Metrics, Risk Event Highlights, Threat Intelligence.\n\n"
-    "**INSTRUCTIONS:**\n"
-    "1. Begin immediately by stating when the report was generated and the timeframe the logs cover. "
-    "Then smoothly transition into explaining the executive overview and its key findings in your own words.\n"
-    "2. Continue into the security audit metrics, explaining what the numbers indicate rather than restating them.\n"
-    "3. Discuss the risk event highlights, especially critical and warning-level events, clearly explaining what they mean and why they matter.\n"
-    "4. Summarize the threat intelligence by mentioning a few notable attacking IPs, domains, brute-force attempts, and authentication failures, "
-    "adding your professional interpretation.\n"
-    "5. Maintain a single, flowing narrative.\n"
-    "6. Do not quote or copy sentences directly from the report.\n"
-    "7. Do not write a conclusion, summary, or closing statement. Stop naturally after the threat intelligence discussion."
-    "8. The entire response must be **150 words or fewer**. Be concise without losing meaning."
+    "You are a Senior Linux System Administrator explaining the Executive Overview of a log analysis report "
+    "to a stakeholder in a calm, story-like manner. Write a single flowing paragraph that explains what was reviewed, "
+    "when the report was generated, and the time period covered. Then describe the overall system health and why it "
+    "was considered stable or critical basically the executive overview section, followed by a simple explanation of the key Security Audit Metrics — such as "
+    "critical events, warnings, or authentication failures — and what they indicate in plain language. "
+    "End by clearly explaining the most important risk event highlights and why they matter. "
+    "Keep the explanation easy to follow and avoid technical depth; inline emphasis may be used. "
+    "Keep at Maximum of 100 words."
 )
+
 
 STRUCTURED_P1 = (
-    "You are a Senior System Administrator generating a professional server log analysis report.\n"
-    "The report must be concise, structured, and suitable for executive and security review.\n\n"
+    "You are a Senior System Administrator generating the first section of a log analysis report in markdown.\n\n"
 
-    "BEGIN with a static opening line stating that the report is auto-generated.\n"
-    "Clearly mention the log analysis timeframe (start timestamp to end timestamp).\n\n"
+    "BEGIN with one sentence stating the report is auto-generated and clearly mention the analysis timeframe.\n\n"
 
     "### Executive Overview\n"
-    "Provide a high-level summary of overall system health and security posture.\n\n"
-    "State the system status (Stable or Critical) and the total log event volume.\n"
-    "Mention only key operational observations.\n\n"
+    "- System health: <Stable|Critical>\n"
+    "- Primary reason: <brief reason>\n"
+    "- Total log events: <number>\n\n"
 
     "### Security Audit Matrix\n"
-    "Summarize only the most important security findings.\n"
-    "Avoid listing all metrics; focus on admin-relevant issues.\n\n"
+    "- Critical events: <number>\n"
+    "- Warning events: <number>\n"
+    "- Authentication failures: <number>\n\n"
 
     "### Risk Event Highlights\n"
-    "Highlight high-risk or abnormal events.\n"
-    "Briefly explain involved processes or activities with technical precision.\n\n"
-
-    "### Threat Intelligence Analysis\n"
-    "Analyze threat intelligence data such as attacking IPs, authentication abuse, and patterns.\n"
-    "Provide analytical insights rather than raw statistics.\n\n"
+    "- High-risk event: <description> (occurrences: <number>)\n"
+    "- Affected component/process: <name>\n\n"
 
     "CONSTRAINTS:\n"
-    "- Maximum 150 words total.\n"
-    "- Use Markdown headers.\n"
-    "- Professional, clear, and non-repetitive language.\n"
+    "- Use only Executive Overview, Security Audit Matrix, and Risk Event data.\n"
+    "- Include exact numeric values from the report.\n"
+    "- Be precise, technical, and concise.\n"
+    "- Maximum 100 words."
 )
 
 
 # ==========================================
-# PART 2 PROMPTS (Operations & Activity)
-# Sections: User Session Activity, Rare Log Patterns, Critical Breakdown
+# PART 2: THREAT INTELLIGENCE
+# Content: Threat Intelligence (Fail2Ban Candidates)
 # ==========================================
-
 NARRATIVE_P2 = (
-    "You are a Senior Linux System Administrator explaining a log analysis report to a non-technical stakeholder in simple, clear language.\n\n"
-    "**FOCUS AREAS:** User Session Activity, Rare Log Patterns, Critical Breakdown.\n\n"
-    "**INSTRUCTIONS:**\n"
-    "1. Begin the narrative naturally by describing the User Session Activity section like who logged in, notable commands or services used, and any repeated login attempts plus what you inferred from them. "
-    "Briefly highlight a few specific users and patterns you observed; do not attempt to cover everything.\n"
-    "2. Move on to the Rare Log Patterns only if they represent a meaningful anomaly. Explain their significance in plain language instead of copying text from the report.\n"
-    "3. Finally use the Critical Breakdown section to emphasize the most impactful services, users, or IP addresses and what you understood from them.\n"
-    "4. Maintain a smooth, continuous narrative without section headers or bullet points.\n"
-    "5. Do not include raw log lines, metrics tables, or timestamps.\n"
-    "6. The entire response must be **150 words or fewer**. Be concise without losing meaning."
-    "7. End with the following footer exactly as written, in italics:\n"
-    "*Further detailed info can be found in the Log_Analysis_Report.md file.*"
+    "You are a Senior Linux System Administrator continuing the report explanation by talking only about "
+    "Threat Intelligence derived from Fail2Ban-style analysis. Write a single, easy-to-follow paragraph that "
+    "explains what kind of hostile or suspicious activity was observed, such as repeated login failures or "
+    "automated attempts, and how this behavior was identified. Describe the situation as a story — who or what "
+    "was being targeted, how often it happened, and what it suggests about external attack pressure — using "
+    "clear, non-technical language. You may highlight a few representative IP addresses or user accounts inline "
+    "for clarity, but avoid deep technical detail. Do NOT discuss system health, user sessions, or risk events. "
+    "Do NOT conclude. Maximum 100 words."
 )
 
 
 STRUCTURED_P2 = (
-    "You are a Senior System Administrator generating an operational analysis report of the server.\n"
-    "The report must focus on usage behavior, service activity, and operational patterns.\n\n"
+    "You are a Senior System Administrator summarizing Threat Intelligence findings strictly from the "
+    "Fail2Ban Candidates table.\n\n"
 
-    "### User Activity\n"
-    "Summarize legitimate user sessions, login behavior, and services accessed.\n"
-    "Focus on normal operational usage rather than security threats. provide few of the users and their patterns of usage.\n\n"
+    "### High-Intensity Attack Sources\n"
+    "- IP/Host: <ip_or_host> | Burst/10min: <number> | Total failures: <number> | First trigger: <timestamp>\n"
+    "- IP/Host: <ip_or_host> | Burst/10min: <number> | Total failures: <number> | First trigger: <timestamp>\n\n"
 
-    "### Notable Anomalies\n"
-    "Briefly mention rare, unusual, or unexpected operational log patterns if relevant.\n"
-    "Do not speculate; state observations only.\n\n"
+    "### Attack Characteristics\n"
+    "- Peak burst rate observed: <max_burst>/10min\n"
+    "- Highest total failure count: <number>\n"
+    "- Distinct attacking sources identified: <count>\n\n"
 
-    "### Top Operational Statistics\n"
-    "Mention top users, services, or processes based on the Critical Breakdown.\n"
-    "Highlight only the most operationally significant items.\n\n"
+    "CONSTRAINTS:\n"
+    "- Use ONLY values present in the Fail2Ban Candidates table.\n"
+    "- Copy IPs/hosts, timestamps, burst rates, and totals exactly.\n"
+    "- No assumptions, no interpretation beyond numeric facts.\n"
+    "- Maximum 100 words."
+)
 
-    "END the report with this exact footer in italics:\n"
+
+# ==========================================
+# PART 3: USER SESSION ACTIVITY
+# Content: User Session Activity
+# ==========================================
+NARRATIVE_P3 = (
+    "You are a Senior Linux System Administrator continuing the explanation by describing User Session Activity "
+    "in a clear, story-like way. Write one flowing paragraph explaining how the system was accessed by legitimate "
+    "users over time. Describe which users appeared most frequently, when their sessions usually occurred, and "
+    "what stood out about the session behavior — such as very short logins or repeated access at consistent times. "
+    "Explain what this suggests in plain language, without diving into technical mechanisms. You may highlight "
+    "specific users inline for clarity."
+    "Maximum 100 words."
+)
+
+
+STRUCTURED_P3 = (
+    "You are a Senior System Administrator summarizing User Session Activity strictly from the User Session table.\n\n"
+
+    "### Session Summary\n"
+    "- Total distinct users: <number>\n"
+    "- Total recorded sessions: <number>\n"
+    "- Primary authentication process: <process>\n\n"
+
+    "### User-Level Activity\n"
+    "- User: <username> | Sessions: <count> | Typical duration: <duration>\n"
+    "- User: <username> | Sessions: <count> | Typical duration: <duration>\n\n"
+
+    "### Timing Characteristics\n"
+    "- Common access window: <HH:MM range>\n"
+    "- Sessions with zero duration: <count>\n\n"
+
+    "CONSTRAINTS:\n"
+    "- Use ONLY data from the User Session Activity table.\n"
+    "- Copy counts, users, durations, and processes exactly.\n"
+    "- Do not infer intent or security risk.\n"
+    "- Maximum 100 words."
+)
+
+
+# ==========================================
+# PART 4: ANOMALIES & BREAKDOWN
+# Content: Rare Log Patterns, Critical Breakdown
+# ==========================================
+NARRATIVE_P4 = (
+    "You are a Senior Linux System Administrator concluding the explanation by briefly discussing rare but noteworthy "
+    "system events and overall activity concentration. Write one clear paragraph explaining that a small number of "
+    "unusual log entries appeared only once, such as unexpected login attempts, unusual terminal input, legacy remote "
+    "service connections, or system-level warnings, and describe why they stand out without reading raw logs. Then "
+    "summarize the critical breakdown section like where did most activity was concentrated by explaining which services, users, and external sources appeared "
+    "most frequently overall. Keep the language simple and explanatory, avoiding technical depth. "
+    "End with this exact italicized line: *Further detailed info can be found in the Log_Analysis_Report.md file.* "
+    "Maximum 100 words."
+)
+STRUCTURED_P4 = (
+    "You are a Senior System Administrator summarizing Rare Log Patterns and the Critical Breakdown "
+    "section of a log analysis report in markdown.\n\n"
+
+    "### Notable Rare Log Patterns\n"
+    "- Number of distinct rare templates observed: <count>\n"
+    "- Occurrence pattern: <e.g., single occurrence per template>\n"
+    "- Services involved: <comma-separated list of services>\n\n"
+
+    "### Critical Breakdown\n"
+    "- Top services by log volume:\n"
+    "  - <service_name>: <event_count> events (<percentage>)\n"
+    "  - <service_name>: <event_count> events (<percentage>)\n\n"
+    "- Top users:\n"
+    "  - <username>: <event_count> events (<percentage>)\n"
+    "  - <username>: <event_count> events (<percentage>)\n\n"
+    "- Top IPs or hosts:\n"
+    "  - <ip_or_hostname>: <event_count> events (<percentage>)\n"
+    "  - <ip_or_hostname>: <event_count> events (<percentage>)\n\n"
+
+    "END with this exact footer in italics:\n"
     "*Further detailed info can be found in the Log_Analysis_Report.md file.*\n\n"
 
     "CONSTRAINTS:\n"
-    "- Maximum 150 words total.\n"
-    "- Use Markdown headers.\n"
-    "- Professional, concise, and non-repetitive language.\n"
+    "- Use ONLY Rare Log Patterns and Critical Breakdown data.\n"
+    "- Replace placeholders with exact values from the report.\n"
+    "- Do not invent, infer, or generalize data.\n"
+    "- No interpretation or recommendations.\n"
+    "- Maximum 100 words."
 )
-
 
 # ==========================================
 # AI FUNCTIONS
@@ -112,10 +176,9 @@ STRUCTURED_P2 = (
 
 def generate_summary(report_path, style="structured"):
     """
-    Splits the report into two chunks to prevent 'Recency Bias', 
-    processes them separately, and combines the result.
+    Splits the report into 4 chunks to ensure detailed coverage of Threats and Sessions.
     """
-    print(f"\n🚀 Generative AI running ({style} mode - Split Strategy)...")
+    print(f"\n🚀 Generative AI running ({style} mode - 4-Way Split Strategy)...")
 
     # 1. Read Report
     if not os.path.exists(report_path):
@@ -127,64 +190,107 @@ def generate_summary(report_path, style="structured"):
     except Exception as e:
         return f"Error reading report: {e}"
 
-    # 2. INTELLIGENT SPLIT (The "Map" Step)
-    # Splitting exactly where Part 2 begins: Section 5
-    split_marker = "## 5. User Session Activity"
-    
-    if split_marker in full_content:
-        parts = full_content.split(split_marker)
-        chunk_security = parts[0] # Contains Sections 1, 2, 3, 4
-        chunk_operations = split_marker + parts[1] # Contains Sections 5, 6, 7
-    else:
-        # Fallback if marker is missing
-        midpoint = len(full_content) // 2
-        chunk_security = full_content[:midpoint]
-        chunk_operations = full_content[midpoint:]
+    # 2. INTELLIGENT 4-WAY SPLIT
+    # Markers based on static_report.py structure
+    m1 = "## 4. Threat Intelligence"
+    m2 = "## 5. User Session Activity"
+    m3 = "## 6. Rare Log Patterns"
+
+    try:
+        # Split 1: Isolate Part 1 (Start to Threat Intel)
+        # Covers: Intro, Executive Overview, Security Metrics, Risk Highlights
+        if m1 in full_content:
+            part1_text, rest1 = full_content.split(m1, 1)
+            rest1 = m1 + rest1 
+        else:
+            part1_text = full_content
+            rest1 = ""
+
+        # Split 2: Isolate Part 2 (Threat Intel to User Session)
+        # Covers: Threat Intelligence
+        if m2 in rest1:
+            part2_text, rest2 = rest1.split(m2, 1)
+            rest2 = m2 + rest2
+        else:
+            part2_text = rest1
+            rest2 = ""
+
+        # Split 3: Isolate Part 3 (User Session to Rare Patterns)
+        # Covers: User Session Activity
+        if m3 in rest2:
+            part3_text, rest3 = rest2.split(m3, 1)
+            part4_text = m3 + rest3 # Part 4 is the remainder
+        else:
+            part3_text = rest2
+            part4_text = ""
+            
+        # Part 4 Covers: Rare Log Patterns, Critical Breakdown
+
+    except Exception as e:
+        print(f"[WARN] Split failed ({e}), falling back to single pass.")
+        part1_text = full_content
+        part2_text = ""
+        part3_text = ""
+        part4_text = ""
 
     # 3. Select Prompts
     if style == "narrative":
-        prompt_p1 = NARRATIVE_P1
-        prompt_p2 = NARRATIVE_P2
+        p1, p2, p3, p4 = NARRATIVE_P1, NARRATIVE_P2, NARRATIVE_P3, NARRATIVE_P4
     else:
-        prompt_p1 = STRUCTURED_P1
-        prompt_p2 = STRUCTURED_P2
+        p1, p2, p3, p4 = STRUCTURED_P1, STRUCTURED_P2, STRUCTURED_P3, STRUCTURED_P4
 
-    # 4. RUN INFERENCE (Two separate calls)
-    try:
-        # --- PASS 1: Security & Health ---
-        print("   -> Processing Part 1 (Security Core)...")
-        response_1 = ollama.chat(model=MODEL_NAME, messages=[
-            {'role': 'system', 'content': prompt_p1},
-            {'role': 'user', 'content': f"Report Part 1:\n{chunk_security}"},
+    # 4. RUN INFERENCE (4 separate calls)
+    final_parts = []
+    
+    # --- PASS 1: Overview ---
+    if part1_text.strip():
+        print("   -> Processing Part 1 (Overview & Risks)...")
+        r1 = ollama.chat(model=MODEL_NAME, messages=[
+            {'role': 'system', 'content': p1},
+            {'role': 'user', 'content': part1_text}
         ])
-        text_part_1 = response_1['message']['content'].strip()
+        final_parts.append(r1['message']['content'].strip())
 
-        # --- PASS 2: Operations & Activity ---
-        print("   -> Processing Part 2 (User Activity)...")
-        response_2 = ollama.chat(model=MODEL_NAME, messages=[
-            {'role': 'system', 'content': prompt_p2},
-            {'role': 'user', 'content': f"Report Part 2:\n{chunk_operations}"},
+    # --- PASS 2: Threats ---
+    if part2_text.strip():
+        print("   -> Processing Part 2 (Threat Intelligence)...")
+        r2 = ollama.chat(model=MODEL_NAME, messages=[
+            {'role': 'system', 'content': p2},
+            {'role': 'user', 'content': part2_text}
         ])
-        text_part_2 = response_2['message']['content'].strip()
+        final_parts.append(r2['message']['content'].strip())
 
-        # 5. COMBINE (The "Reduce" Step)
-        # Add a newline separator between the two parts
-        final_summary = f"{text_part_1}\n\n{text_part_2}"
-        
-        # Save
-        base_dir = os.path.dirname(report_path)
-        output_filename = f"AI_Summary_{style}.md"
-        output_path = os.path.join(base_dir, output_filename)
-        
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(final_summary)
-            
-        print(f"✅ Summary saved to: {output_path}")
-        return final_summary
+    # --- PASS 3: Sessions ---
+    if part3_text.strip():
+        print("   -> Processing Part 3 (User Sessions)...")
+        r3 = ollama.chat(model=MODEL_NAME, messages=[
+            {'role': 'system', 'content': p3},
+            {'role': 'user', 'content': part3_text}
+        ])
+        final_parts.append(r3['message']['content'].strip())
 
-    except Exception as e:
-        print(f"❌ Generation failed: {e}")
-        return f"AI Generation Failed: {str(e)}"
+    # --- PASS 4: Anomalies ---
+    if part4_text.strip():
+        print("   -> Processing Part 4 (Anomalies & Stats)...")
+        r4 = ollama.chat(model=MODEL_NAME, messages=[
+            {'role': 'system', 'content': p4},
+            {'role': 'user', 'content': part4_text}
+        ])
+        final_parts.append(r4['message']['content'].strip())
+
+    # 5. COMBINE
+    final_summary = "\n\n".join(final_parts)
+    
+    # Save
+    base_dir = os.path.dirname(report_path)
+    output_filename = f"AI_Summary_{style}.md"
+    output_path = os.path.join(base_dir, output_filename)
+    
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(final_summary)
+        
+    print(f"✅ Summary saved to: {output_path}")
+    return final_summary
 
 def chat_with_log(report_path, chat_history, user_question):
     """
