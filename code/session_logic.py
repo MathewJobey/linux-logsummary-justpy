@@ -128,9 +128,9 @@ def analyze_sessions(df):
         duration_lines = []
         
         for s in sessions:
-            start_str = s['start'].strftime('%Y-%m-%d %H:%M')
+            start_str = s['start'].strftime('%Y-%m-%d %H:%M:%S')
             if s['end']:
-                end_str = s['end'].strftime('%Y-%m-%d %H:%M')
+                end_str = s['end'].strftime('%Y-%m-%d %H:%M:%S')
                 timeframe_lines.append(f"{start_str} ➝ {end_str}")
             else:
                 timeframe_lines.append(f"{start_str} ➝ ...")
