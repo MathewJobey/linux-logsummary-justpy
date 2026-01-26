@@ -82,22 +82,49 @@ def get_time_from_json(params_str):
         return pd.NaT
 
 def step_2_sort_logs(input_file):
-    print(f"[SORT] Sorting logs: {os.path.basename(input_file)}")
+    print(f"[SORT] Processing Excel: {os.path.basename(input_file)}")
+    
+    # 1. Load the Excel Data
     try:
         df_logs = pd.read_excel(input_file, sheet_name="Log Analysis")
         df_templates = pd.read_excel(input_file, sheet_name="Template Summary")
     except Exception as e:
         raise ValueError(f"Error reading Excel file: {e}")
 
+    # 2. Sort using the Embedded Index (Source of Truth)
     if 'Parameters' in df_logs.columns:
-        df_logs['Temp_Timestamp'] = df_logs['Parameters'].apply(get_time_from_json)
-        if df_logs['Temp_Timestamp'].notna().sum() > 0:
-            df_logs = df_logs.sort_values(by='Temp_Timestamp', ascending=True)
-        df_logs = df_logs.drop(columns=['Temp_Timestamp'])
-    
+        print("[SORT] Sorting based on embedded '_Original_Line_Index'...")
+
+        def get_index_from_json(params_str):
+            try:
+                if pd.isna(params_str): return 999999999
+                # Parse JSON
+                params = json.loads(str(params_str))
+                # Extract the index we saved in parser.py (default to high number if missing)
+                return int(params.get('_Original_Line_Index', 999999999))
+            except:
+                return 999999999
+
+        # Create temporary sorting column
+        df_logs['_Sort_Index'] = df_logs['Parameters'].apply(get_index_from_json)
+        
+        # Verify if we actually found indices
+        valid_count = (df_logs['_Sort_Index'] != 999999999).sum()
+        print(f"[SORT] Found valid indices for {valid_count}/{len(df_logs)} rows.")
+
+        # Perform the Sort
+        df_logs = df_logs.sort_values(by='_Sort_Index', ascending=True)
+        
+        # Clean up
+        df_logs = df_logs.drop(columns=['_Sort_Index'])
+        
+    else:
+        print("[WARN] 'Parameters' column missing. Cannot perform strict sorting.")
+
+    # 3. Save Sorted File
     base_dir = os.path.dirname(input_file)
-    base_name = os.path.basename(input_file)
-    stem, _ext = os.path.splitext(base_name)
+    filename = os.path.basename(input_file)
+    stem, _ext = os.path.splitext(filename)
     new_name = f"{stem}_sorted.xlsx"
     output_path = os.path.join(base_dir, new_name)
 
