@@ -952,25 +952,36 @@ def app():
             analytics_header.on('click', toggle_analytics)
             
             # ========================================================
-            # NEW: COLLAPSIBLE FULL REPORT (Clean & Modular)
+            # NEW: COLLAPSIBLE FULL REPORT (With Print/PDF Action)
             # ========================================================
             
             # 1. Main Container
             report_wrap = jp.Div(a=card4, classes="border rounded shadow-sm bg-white mt-4 overflow-hidden")
             
-            # 2. Header
-            report_header = jp.Div(a=report_wrap, classes="p-3 bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100 transition select-none")
-            jp.Span(text="📄 View Detailed Log Report", a=report_header, classes="font-bold text-slate-700 text-sm")
-            toggle_icon_report = jp.Span(text="▼", a=report_header, classes="text-xs text-gray-500")
-            
-            # 3. Content Area
-            report_content = jp.Div(a=report_wrap, classes="hidden p-8 bg-white border-t text-sm text-slate-800 overflow-auto max-h-screen leading-relaxed")
-            
-            # 4. Render Markdown using our new module
-            # This one line replaces the 20 lines of CSS/HTML logic we had before
-            report_content.inner_html = render_markdown_report(report_path)
+            # 2. Header (Refactored for Layout)
+            # We use a Flex container to separate the "Toggle Trigger" from the "Print Button"
+            report_header = jp.Div(a=report_wrap, classes="p-3 bg-gray-50 flex justify-between items-center border-b border-gray-200")
 
-            # 5. Toggle Logic
+            # LEFT SIDE: The Clickable Toggle Area
+            header_left = jp.Div(a=report_header, classes="flex items-center gap-2 cursor-pointer hover:opacity-80 transition select-none")
+            toggle_icon_report = jp.Span(text="▼", a=header_left, classes="text-xs text-gray-500")
+            jp.Span(text="📄 View Detailed Log Report", a=header_left, classes="font-bold text-slate-700 text-sm")
+
+            # RIGHT SIDE: The Action Button
+            header_right = jp.Div(a=report_header, classes="flex items-center")
+            
+            # [NEW] Print/PDF Button
+            btn_print = jp.Button(text="🖨️ Print / Save PDF", a=header_right, 
+                                  classes="bg-white border border-gray-300 text-gray-600 text-xs font-bold px-3 py-1 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 shadow-sm transition-colors")
+
+            # 3. Content Area
+            report_content = jp.Div(a=report_wrap, classes="hidden p-8 bg-white text-sm text-slate-800 overflow-auto max-h-screen leading-relaxed")
+            
+            # 4. Render Markdown
+            html_report_content = render_markdown_report(report_path)
+            report_content.inner_html = html_report_content
+
+            # 5. Toggle Logic (Attached ONLY to the Left Side)
             def toggle_report(self, msg):
                 if "hidden" in report_content.classes:
                     report_content.classes = report_content.classes.replace("hidden", "")
@@ -979,7 +990,115 @@ def app():
                     report_content.classes = f"{report_content.classes} hidden"
                     toggle_icon_report.text = "▼"
             
-            report_header.on('click', toggle_report)
+            header_left.on('click', toggle_report)
+            
+            # 6. [NEW] Print / Download PDF Logic (COMPACT VERSION)
+            async def print_report_pdf(self, msg):
+                """
+                Opens the report in a new window with COMPACT styling to save paper/PDF pages.
+                """
+                # Escape backticks/quotes for JS safety
+                safe_html = html_report_content.replace('`', '\\`').replace('${', '\\${')
+                
+                script_code = f"""
+                var printWin = window.open('', '_blank');
+                printWin.document.write(`
+                    <html>
+                        <head>
+                            <title>Log Analysis Report</title>
+                            <style>
+                                /* --- COMPACT PRINT STYLES --- */
+                                @media print {{
+                                    @page {{ margin: 15mm; size: auto; }} /* Set reasonable print margins */
+                                }}
+                                body {{ 
+                                    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; 
+                                    padding: 20px; 
+                                    color: #1e293b; 
+                                    line-height: 1.3; /* Tighter lines */
+                                    font-size: 11px;  /* Smaller base font */
+                                }}
+                                h1 {{ 
+                                    font-size: 18px; 
+                                    border-bottom: 2px solid #e2e8f0; 
+                                    padding-bottom: 5px; 
+                                    margin-bottom: 10px; 
+                                }}
+                                h2 {{ 
+                                    font-size: 14px; 
+                                    margin-top: 15px; 
+                                    margin-bottom: 5px; 
+                                    color: #0f172a; 
+                                    border-left: 3px solid #3b82f6; 
+                                    padding-left: 8px; 
+                                    page-break-after: avoid; /* Keep header with content */
+                                }}
+                                h3 {{ 
+                                    font-size: 12px; 
+                                    margin-top: 10px; 
+                                    margin-bottom: 2px;
+                                    color: #334155; 
+                                    font-weight: bold; 
+                                    page-break-after: avoid;
+                                }}
+                                /* COMPACT TABLES */
+                                table {{ 
+                                    width: 100%; 
+                                    border-collapse: collapse; 
+                                    margin-top: 8px; 
+                                    margin-bottom: 8px; 
+                                    font-size: 10px; /* Very compact table text */
+                                }}
+                                th, td {{ 
+                                    border: 1px solid #cbd5e1; 
+                                    padding: 4px 6px; /* Reduced cell padding */
+                                    text-align: left; 
+                                }}
+                                th {{ 
+                                    background-color: #f1f5f9; 
+                                    font-weight: bold; 
+                                    -webkit-print-color-adjust: exact; /* Force background color print */
+                                    print-color-adjust: exact;
+                                }}
+                                tr:nth-child(even) {{ 
+                                    background-color: #f8fafc; 
+                                    -webkit-print-color-adjust: exact;
+                                    print-color-adjust: exact;
+                                }}
+                                code {{ 
+                                    background-color: #f1f5f9; 
+                                    padding: 1px 3px; 
+                                    border-radius: 3px; 
+                                    font-family: monospace; 
+                                    font-size: 0.95em; 
+                                    border: 1px solid #e2e8f0;
+                                }}
+                                blockquote {{ 
+                                    border-left: 3px solid #cbd5e1; 
+                                    padding-left: 10px; 
+                                    color: #64748b; 
+                                    font-style: italic; 
+                                    margin: 8px 0; 
+                                }}
+                                .no-print {{ display: none; }}
+                            </style>
+                        </head>
+                        <body>
+                            {safe_html}
+                            <script>
+                                window.onload = function() {{ 
+                                    window.print(); 
+                                }};
+                            </script>
+                        </body>
+                    </html>
+                `);
+                printWin.document.close();
+                """
+                await msg.page.run_javascript(script_code)
+
+            btn_print.on('click', print_report_pdf)
+            
                         
         except Exception as e:
             print(f"[ERROR] Report failed: {e}")
