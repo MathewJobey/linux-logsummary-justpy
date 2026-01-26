@@ -92,6 +92,7 @@ def write_executive_report(df_logs, output_path, min_time, max_time, peak_str, p
     # 3. PREPARE METRICS
     # ==========================================
     total_events = len(df_logs)
+    df_logs['Template ID'] = df_logs['Template ID'].astype(str)
     sev_counts = df_logs['Severity'].value_counts()
     crit_count = sev_counts.get('CRITICAL', 0)
     warn_count = sev_counts.get('WARNING', 0)
