@@ -101,7 +101,7 @@ def normalize_ftpd_rhost(line):
         return f"{prefix} {outer_ip} ({inner})" if inner else f"{prefix} {outer_ip}"
     return pattern.sub(replacer, line)
 
-def extract_named_parameters(clean_raw_line, template):
+def extract_named_parameters(clean_raw_line, template, line_index):
     """
     Extracts values using the Cleaned Raw Line (no trailing timestamp).
     """
@@ -164,6 +164,8 @@ def extract_named_parameters(clean_raw_line, template):
         # Overwrite/Set these keys with the authoritative raw values
         params['TIMESTAMP'] = header_match.group(1)
         params['HOSTNAME'] = header_match.group(2)
+    
+    params['_Original_Line_Index'] = line_index
 
     return json.dumps(params)
 
@@ -190,7 +192,7 @@ def parse_log_file(target_file):
     print(f"Input File:       {os.path.basename(target_file)}")
 
     with open(target_file, 'r', encoding='utf-8', errors='ignore') as f:
-        for line in f:
+        for idx, line in enumerate(f): 
             raw_line = line.strip()
             if not raw_line: continue
             
@@ -206,7 +208,7 @@ def parse_log_file(target_file):
             clean_raw_line = normalize_login_uid(clean_raw_line)
             clean_raw_line = normalize_ftpd_rhost(clean_raw_line)
             
-            params_json = extract_named_parameters(clean_raw_line, template)
+            params_json = extract_named_parameters(clean_raw_line, template, idx)
             
             rows.append({
                 "Raw Log": raw_line,
