@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python pipeline.py
 ```
 
-3) Open the app in your browser (default port `8000`), upload a log, and follow the steps.
+3) Open the app in your browser (default port `8000`), upload a log, and follow the steps. hi
 
 ## Notes
 
