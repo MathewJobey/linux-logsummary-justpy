@@ -1240,4 +1240,4 @@ def app():
     # (And ignores clicks outside the box!)
     input_box.on('submit', handle_chat_message)             
     return wp
-jp.justpy(app, port=8000)
+jp.justpy(app, port=8000, reload=False)
